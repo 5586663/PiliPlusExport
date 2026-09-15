@@ -12,7 +12,8 @@ import java.util.Map;
  * 该字段只在网页端接口 /x/v2/reply/wbi/main 的 reply_control.location 返回。
  * 因此拉完 gRPC 评论后，用网页端接口按 rpid 建映射，回填 Reply.location。
  *
- * 只填 location，不动其它字段；拉不到就保持空，md 里自动不显示该行。
+ * 注意：网页端返回的 location 值自带「IP属地：」前缀（如「IP属地：江苏」），
+ * 这里统一剥掉，只留地名，避免 md 里出现重复前缀。
  */
 public final class IpBackfill {
 
@@ -52,7 +53,7 @@ public final class IpBackfill {
                         if (m == null) continue;
                         long rpid = Json2.lng(m, "rpid");
                         if (rpid == 0) continue;
-                        String loc = locOf(m);
+                        String loc = clean(locOf(m));
                         if (loc != null && !loc.isEmpty()) map.put(rpid, loc);
 
                         // 楼中楼（网页端首屏内嵌）
@@ -63,7 +64,7 @@ public final class IpBackfill {
                                 if (sm == null) continue;
                                 long srpid = Json2.lng(sm, "rpid");
                                 if (srpid == 0) continue;
-                                String sl = locOf(sm);
+                                String sl = clean(locOf(sm));
                                 if (sl != null && !sl.isEmpty()) map.put(srpid, sl);
                             }
                         }
@@ -112,6 +113,15 @@ public final class IpBackfill {
         Map<String, Object> ctrl = Json2.obj(m.get("reply_control"));
         if (ctrl == null) return null;
         return Json2.str(ctrl, "location");
+    }
+
+    /** 剥掉「IP属地：」「IP属地:」前缀与空白，只留地名 */
+    private static String clean(String s) {
+        if (s == null) return null;
+        String t = s.trim();
+        if (t.startsWith("IP属地：")) t = t.substring(5).trim();
+        else if (t.startsWith("IP属地:")) t = t.substring(5).trim();
+        return t;
     }
 
     private static void sleep(long ms) {
