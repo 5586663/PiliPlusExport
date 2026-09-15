@@ -107,7 +107,7 @@ public class BiliApi {
     }
 
     // ---------------- 视频信息 ----------------
-    public static class Video { public long aid; public String bvid = ""; public String title = ""; public long replyCount; }
+    public static class Video { public long aid; public String bvid = ""; public String title = ""; public long replyCount; public long duration; }
 
     public static Video videoInfo(String id) throws Exception {
         String q = id.startsWith("BV") ? "?bvid=" + id : "?aid=" + id.replace("av", "");
@@ -116,6 +116,7 @@ public class BiliApi {
         v.aid = jLong(body, "aid");
         v.bvid = jStr(body, "bvid");
         v.title = jStr(body, "title");
+        v.duration = jLong(body, "duration");
         int i = body.indexOf("\"reply\"");
         if (i > 0) {
             int s = body.indexOf(':', i) + 1, e = s;
