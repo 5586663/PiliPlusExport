@@ -167,6 +167,11 @@ public class MainHook implements IXposedHookLoadPackage {
         cb.setChecked(true);
         box.addView(cb);
 
+        CheckBox cbVid = new CheckBox(a);
+        cbVid.setText("下载视频文件（dash 高清，极慢、占空间大）");
+        cbVid.setChecked(false);
+        box.addView(cbVid);
+
         new AlertDialog.Builder(a)
                 .setTitle("导出单个视频评论")
                 .setView(box)
@@ -175,7 +180,7 @@ public class MainHook implements IXposedHookLoadPackage {
                     Matcher m = BV.matcher(s);
                     if (m.find()) s = m.group();
                     if (s.isEmpty()) { toast(a, "请输入视频号"); return; }
-                    exportOneVideo(a, s, cb.isChecked());
+                    exportOneVideo(a, s, cb.isChecked(), cbVid.isChecked());
                 })
                 .setNegativeButton("取消", null)
                 .show();
@@ -185,12 +190,12 @@ public class MainHook implements IXposedHookLoadPackage {
         new AlertDialog.Builder(a)
                 .setTitle("检测到剪贴板中的视频号")
                 .setMessage(bv + "\n\n直接导出该视频评论？")
-                .setPositiveButton("导出", (d, w) -> exportOneVideo(a, bv, true))
+                .setPositiveButton("导出", (d, w) -> exportOneVideo(a, bv, true, false))
                 .setNegativeButton("手动输入", (d, w) -> askVideoId(a, true))
                 .show();
     }
 
-    private static void exportOneVideo(Activity a, String videoId, boolean withPics) {
+    private static void exportOneVideo(Activity a, String videoId, boolean withPics, boolean downloadVideo) {
         injectCookie();
         AlertDialog dlg = progressDialog(a, "正在导出评论");
         TextView tv = (TextView) dlg.findViewById(android.R.id.message);
@@ -219,6 +224,7 @@ public class MainHook implements IXposedHookLoadPackage {
                 });
             }
         });
+        ex.downloadVideo = downloadVideo;
         ex.run(videoId, withPics);
     }
 
