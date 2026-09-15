@@ -47,6 +47,7 @@ public class MainHook implements IXposedHookLoadPackage {
 
     private static final String TAG_COMMENT = "pili_export_fab_comment";
     private static final String TAG_UP = "pili_export_fab_up";
+    private static final String TAG_CACHE = "pili_export_fab_cache";
 
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lp) {
@@ -88,6 +89,19 @@ public class MainHook implements IXposedHookLoadPackage {
                 b2.setLayoutParams(lp2);
                 b2.setOnClickListener(v -> askUpId(a));
                 decor.addView(b2);
+
+            if (decor.findViewWithTag(TAG_CACHE) == null) {
+                Button b3 = makeButton(a, "合并缓存", "#FFA500");
+                b3.setTag(TAG_CACHE);
+                FrameLayout.LayoutParams lp3 = new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                lp3.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
+                lp3.rightMargin = dp(a, 8);
+                lp3.topMargin = dp(a, 96);
+                b3.setLayoutParams(lp3);
+                b3.setOnClickListener(v -> CacheUi.show(a));
+                decor.addView(b3);
+            }
             }
         } catch (Throwable ignored) {
         }
