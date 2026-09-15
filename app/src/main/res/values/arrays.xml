@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 通用模块：不预置任何包名。
+         安装后在 LSPosed 管理器里自行勾选要注入的目标应用（推荐作用域为空即为通用）。 -->
+    <string-array name="xposed_scope">
+    </string-array>
+</resources>
