@@ -1,0 +1,49 @@
+name: Build PiliPlusExport
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install platform 35
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" || true
+          yes | sdkmanager --licenses || true
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.7'
+
+      - name: Build release APK
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: Locate APK
+        id: apk
+        run: |
+          F=$(find . -name 'app-release*.apk' | head -1)
+          echo "path=$F" >> $GITHUB_OUTPUT
+          ls -la "$F"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PiliPlusExport-apk
+          path: ${{ steps.apk.outputs.path }}
+          if-no-files-found: error
