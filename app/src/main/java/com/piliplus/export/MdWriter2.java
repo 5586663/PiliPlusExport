@@ -21,6 +21,11 @@ public final class MdWriter2 {
 
     static String num(long n) { return String.format(Locale.CHINA, "%,d", n); }
 
+    // ---- 转发到 MdWriter2b ----
+    public static String videoList(SpaceApi.UpInfo up, List<VideoItem> videos) { return MdWriter2b.videoList(up, videos); }
+    public static String dynList(SpaceApi.UpInfo up, List<DynItem> dyns) { return MdWriter2b.dynList(up, dyns); }
+    public static String videoInfo(SpaceApi.UpInfo up, VideoItem v) { return MdWriter2b.videoInfo(up, v); }
+
     // ==================================================================
     /** 00_总览.md */
     public static String upOverview(SpaceApi.UpInfo up, List<VideoItem> videos, List<DynItem> dyns) {
@@ -86,122 +91,101 @@ public final class MdWriter2 {
     }
 
     // ==================================================================
-    /** 动态.md */
+    /** 动态总表（兼容旧调用） */
     public static String dyns(SpaceApi.UpInfo up, List<DynItem> list) {
         StringBuilder b = new StringBuilder(1 << 18);
         b.append("# ").append(up.name).append(" · 动态全量\n\n");
         b.append("> UID：").append(up.mid).append('\n');
         b.append("> 导出时间：").append(now()).append('\n');
         b.append("> 共 ").append(list.size()).append(" 条\n\n---\n\n");
+        for (int i = 0; i < list.size(); i++) b.append(dynDetail(list.get(i)));
+        b.append("*由 PiliPlus 导出模块生成*\n");
+        return b.toString();
+    }
 
-        for (int i = 0; i < list.size(); i++) {
-            DynItem d = list.get(i);
-            b.append("## ").append(i + 1).append(". ").append(dynTypeName(d.typeStr, d.majorType)).append("\n\n");
+    /** 单条动态正文（动态文件夹内的 动态.md） */
+    public static String dynDetail(DynItem d) {
+        StringBuilder b = new StringBuilder(1 << 14);
+        b.append("# ").append(dynTitleOf(d)).append("\n\n");
+        String t = d.pubTs > 0 ? fmt(d.pubTs) : (d.pubTimeText.isEmpty() ? "时间未知" : d.pubTimeText);
+        b.append("> 类型：").append(dynTypeName(d.typeStr, d.majorType)).append('\n');
+        b.append("> 时间：").append(t);
+        if (!d.pubAction.isEmpty()) b.append("　").append(d.pubAction);
+        b.append('\n');
+        if (!d.dynIdStr.isEmpty()) b.append("> 链接：https://t.bilibili.com/").append(d.dynIdStr).append('\n');
+        if (d.oid != 0) b.append("> 评论 oid：").append(d.oid).append("（type ").append(d.commentType).append("）\n");
+        if (d.likeCount > 0 || d.replyCount > 0) {
+            b.append("> 点赞 ").append(num(d.likeCount))
+             .append("　评论 ").append(num(d.replyCount)).append('\n');
+        }
+        b.append('\n');
+        if (!d.title.isEmpty()) b.append("**").append(d.title).append("**\n\n");
+        if (!d.text.trim().isEmpty()) b.append(d.text.trim()).append("\n\n");
+        if (!d.cover.isEmpty()) b.append("![封面](").append(d.cover).append(")\n\n");
+        for (String img : d.images) {
+            if (img != null && !img.isEmpty()) b.append("![](").append(img).append(")\n\n");
+        }
+        if (!d.bvid.isEmpty()) {
+            b.append("视频：https://www.bilibili.com/video/").append(d.bvid).append("\n\n");
+        }
+        return b.toString();
+    }
 
-            String t = d.pubTs > 0 ? fmt(d.pubTs) : (d.pubTimeText.isEmpty() ? "时间未知" : d.pubTimeText);
-            b.append("> 时间：").append(t);
-            if (!d.pubAction.isEmpty()) b.append("　").append(d.pubAction);
+    static String dynTitleOf(DynItem d) {
+        if (d.title != null && !d.title.trim().isEmpty()) return d.title.trim();
+        String t = d.text == null ? "" : d.text.replace("\n", " ").trim();
+        if (t.length() > 40) t = t.substring(0, 40) + "…";
+        if (!t.isEmpty()) return t;
+        if (!d.dynIdStr.isEmpty()) return d.dynIdStr;
+        return "动态";
+    }
+
+    // ==================================================================
+    /** 评论区 markdown（视频评论 / 动态评论共用） */
+    public static String comments(String header, List<Reply> mains) {
+        StringBuilder b = new StringBuilder(1 << 20);
+        if (header != null && !header.isEmpty()) {
+            b.append(header);
+            if (!header.endsWith("\n")) b.append('\n');
             b.append('\n');
-            b.append("> 链接：https://t.bilibili.com/").append(d.dynIdStr).append('\n');
-            if (d.likeCount > 0 || d.replyCount > 0) {
-                b.append("> 点赞 ").append(num(d.likeCount))
-                 .append("　评论 ").append(num(d.replyCount)).append('\n');
-            }
-            b.append('\n');
+        }
+        b.append("---\n\n");
 
-            if (!d.title.isEmpty()) b.append("**").append(d.title).append("**\n\n");
-            if (!d.text.trim().isEmpty()) b.append(d.text.trim()).append("\n\n");
-            if (!d.cover.isEmpty()) b.append("![封面](").append(d.cover).append(")\n\n");
-            for (String img : d.images) {
-                if (img != null && !img.isEmpty()) b.append("![](").append(img).append(")\n\n");
+        int idx = 0;
+        for (Reply m : mains) {
+            idx++;
+            b.append("### ").append(idx).append(". ").append(name(m)).append("\n\n");
+            b.append("> UID：").append(m.mid).append("　点赞：").append(m.like)
+             .append("　时间：").append(fmt(m.ctime));
+            if (!ip(m).isEmpty()) b.append("　IP属地：").append(ip(m));
+            if (m.count > 0) b.append("　楼中楼：").append(m.subs.size()).append('/').append(m.count);
+            b.append("\n\n").append(body(m)).append("\n\n");
+
+            for (int j = 0; j < m.pics.size(); j++) {
+                String fn = (j == 0) ? ("评论" + idx) : ("评论" + idx + "-" + (j + 1));
+                b.append("![评论图](评论图片/").append(fn).append(NameUtil.imgExt(m.pics.get(j))).append(")\n\n");
             }
-            if (!d.bvid.isEmpty()) {
-                b.append("视频：https://www.bilibili.com/video/").append(d.bvid).append("\n\n");
+
+            for (int k = 0; k < m.subs.size(); k++) {
+                Reply s = m.subs.get(k);
+                b.append("#### ↳ ").append(k + 1).append(". ").append(name(s))
+                 .append("（UID：").append(s.mid).append("）\n\n");
+                StringBuilder meta = new StringBuilder();
+                if (s.like > 0) meta.append("点赞 ").append(s.like);
+                if (s.ctime > 0) { if (meta.length() > 0) meta.append(" · "); meta.append(fmt(s.ctime)); }
+                if (!ip(s).isEmpty()) { if (meta.length() > 0) meta.append(" · "); meta.append("IP属地 ").append(ip(s)); }
+                if (meta.length() > 0) b.append("> ").append(meta).append("\n\n");
+                b.append(body(s)).append("\n\n");
+
+                for (int j = 0; j < s.pics.size(); j++) {
+                    String fn = "评论" + idx + "_" + (k + 1) + (j == 0 ? "" : ("-" + (j + 1)));
+                    b.append("![评论图](评论图片/").append(fn).append(NameUtil.imgExt(s.pics.get(j))).append(")\n\n");
+                }
             }
             b.append("---\n\n");
         }
         b.append("*由 PiliPlus 导出模块生成*\n");
         return b.toString();
-    }
-
-    // ==================================================================
-    /** 单个视频的评论 markdown */
-    public static String videoComments(SpaceApi.UpInfo up, VideoItem v, List<Reply> mains,
-                                       MdWriter.Style style, long subTotal, long apiTotal) {
-        StringBuilder b = new StringBuilder(1 << 20);
-        b.append("# ").append(v.title).append("\n\n");
-        b.append("> UP主：").append(up.name).append("（UID：").append(up.mid).append("）\n");
-        b.append("> 视频链接：https://www.bilibili.com/video/").append(v.bvid).append('\n');
-        if (!v.pubTime.isEmpty()) b.append("> 发布时间：").append(v.pubTime).append('\n');
-        if (v.play > 0) b.append("> 播放：").append(num(v.play))
-                .append("　点赞：").append(num(v.like)).append('\n');
-        b.append("> 导出时间：").append(now()).append('\n');
-        b.append("> 主评论 ").append(mains.size()).append(" 条，楼中楼 ").append(subTotal)
-         .append(" 条，合计 ").append(mains.size() + subTotal).append(" 条\n");
-        if (apiTotal > 0) b.append("> 接口 stat.reply = ").append(apiTotal).append("（含已删除/审核中）\n");
-        b.append('\n');
-
-        if (style == MdWriter.Style.TABLE) {
-            b.append("| 楼层 | 昵称 | UID | 点赞 | 时间 | 内容 |\n");
-            b.append("|------|------|-----|------|------|------|\n");
-        } else {
-            b.append("---\n\n");
-        }
-
-        int idx = 0;
-        for (Reply m : mains) {
-            idx++;
-            if (style == MdWriter.Style.TABLE) tableRow(b, m, idx);
-            else if (style == MdWriter.Style.CHAT) chatBlock(b, m);
-            else if (style == MdWriter.Style.PLAIN) plainBlock(b, m);
-            else headingBlock(b, m, idx);
-        }
-        b.append("\n*由 PiliPlus 导出模块生成*\n");
-        return b.toString();
-    }
-
-    private static void headingBlock(StringBuilder b, Reply m, int idx) {
-        b.append("### ").append(idx).append(". ").append(name(m)).append("\n\n");
-        b.append("> UID：").append(m.mid).append("　点赞：").append(m.like)
-         .append("　时间：").append(fmt(m.ctime));
-        if (m.count > 0) b.append("　楼中楼：").append(m.subs.size()).append('/').append(m.count);
-        b.append("\n\n").append(body(m)).append("\n\n");
-        for (int k = 0; k < m.subs.size(); k++) {
-            Reply s = m.subs.get(k);
-            b.append("#### ↳ ").append(k + 1).append(". ").append(name(s))
-             .append("（UID：").append(s.mid).append("）\n\n");
-            StringBuilder meta = new StringBuilder();
-            if (s.like > 0) meta.append("点赞 ").append(s.like);
-            if (s.ctime > 0) { if (meta.length() > 0) meta.append(" · "); meta.append(fmt(s.ctime)); }
-            if (meta.length() > 0) b.append("> ").append(meta).append("\n\n");
-            b.append(body(s)).append("\n\n");
-        }
-        b.append("---\n\n");
-    }
-
-    private static void tableRow(StringBuilder b, Reply m, int idx) {
-        b.append("| ").append(idx).append(" | ").append(name(m)).append(" | ").append(m.mid)
-         .append(" | ").append(m.like).append(" | ").append(fmt(m.ctime))
-         .append(" | ").append(cell(body(m))).append(" |\n");
-        for (Reply s : m.subs) {
-            b.append("| ↳ | ").append(name(s)).append(" | ").append(s.mid)
-             .append(" | ").append(s.like).append(" | ").append(fmt(s.ctime))
-             .append(" | ").append(cell(body(s))).append(" |\n");
-        }
-    }
-
-    private static void chatBlock(StringBuilder b, Reply m) {
-        b.append("**").append(name(m)).append("**(").append(m.mid).append(")：").append(body(m)).append("\n\n");
-        for (Reply s : m.subs)
-            b.append("> **").append(name(s)).append("**(").append(s.mid).append(")：").append(body(s)).append('\n');
-        if (!m.subs.isEmpty()) b.append('\n');
-    }
-
-    private static void plainBlock(StringBuilder b, Reply m) {
-        b.append(name(m)).append("：").append(body(m)).append("\n\n");
-        for (Reply s : m.subs)
-            b.append("  - ").append(name(s)).append("：").append(body(s)).append('\n');
-        if (!m.subs.isEmpty()) b.append('\n');
     }
 
     // ==================================================================
@@ -232,6 +216,10 @@ public final class MdWriter2 {
     private static String body(Reply r) {
         String s = r.msg == null ? "" : r.msg.replace("\r", "").trim();
         return s.isEmpty() ? "_（空）_" : s;
+    }
+
+    private static String ip(Reply r) {
+        return r.location == null ? "" : r.location.trim();
     }
 
     static String cell(String s) {
