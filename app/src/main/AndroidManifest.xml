@@ -6,7 +6,8 @@
     <application
         android:label="PiliPlus 评论导出"
         android:allowBackup="false"
-        android:hasCode="true">
+        android:hasCode="true"
+        android:networkSecurityConfig="@xml/network_security_config">
 
         <activity
             android:name=".MainActivity"
@@ -23,7 +24,7 @@
             android:value="true" />
         <meta-data
             android:name="xposeddescription"
-            android:value="给 PiliPlus 加一键导出评论区 Markdown 的悬浮按钮" />
+            android:value="给 PiliPlus 加导出按钮：评论 / UP主 / 合并缓存" />
         <meta-data
             android:name="xposedminversion"
             android:value="82" />
