@@ -98,6 +98,7 @@ public final class HttpDownloader {
 
     /** 建立连接并设置请求头 */
     private static HttpURLConnection open(String url, String referer, long rangeStart) throws Exception {
+        if (url.startsWith("http://")) url = "https://" + url.substring(7);
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         c.setInstanceFollowRedirects(false);   // 自己处理，避免跨协议丢失
         c.setRequestMethod("GET");
