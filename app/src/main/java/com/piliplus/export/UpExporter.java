@@ -19,6 +19,8 @@ import java.util.Set;
  *       <序号>_<标题>/
  *         视频信息.md
  *         视频.mp4                 (可选)
+ *         视频.xml                 (弹幕，与视频同名；可选)
+ *         弹幕.md
  *         视频评论/
  *           评论.md
  *           评论图片/评论N.jpg
@@ -47,6 +49,10 @@ public class UpExporter {
         public boolean commentPics = true;
         public boolean downloadVideo = false;
         public boolean dynPics = true;
+        /** 拉视频弹幕（视频.xml + 弹幕.md） */
+        public boolean danmaku = true;
+        /** 评论 IP 属地回填（gRPC 不下发，用网页端接口补） */
+        public boolean ipBackfill = true;
     }
 
     private static final long THROTTLE_MS = 70;
@@ -138,6 +144,8 @@ public class UpExporter {
         CommentSaver.writeFile(new File(dir, "00_总览.md"), MdWriter2.upOverview(up, videos, dyns));
 
         long totalComments = 0;
+        long totalDanmaku = 0;
+        int ipFilled = 0;
         int vFail = 0, dFail = 0;
 
         // ---------- 4. 视频 ----------
@@ -171,8 +179,27 @@ public class UpExporter {
                         }
                     }
 
+                    // 弹幕
+                    if (opt.danmaku) {
+                        try {
+                            long cid = PlayUrlApi.cidOf(v.bvid, v.aid);
+                            List<DanmakuApi.Item> dms = DanmakuApi.fetchAll(cid, v.duration,
+                                    (seg, tot, got) -> cb.on("弹幕", vIdx, vTotal,
+                                            vTitle + "\n第 " + seg + "/" + tot + " 段 · " + got + " 条"));
+                            int dn = DanmakuWriter.write(vdir, vTitle, dms);
+                            totalDanmaku += dn;
+                            cb.on("弹幕完成", vIdx, vTotal, vTitle + "\n" + dn + " 条");
+                        } catch (Throwable t) {
+                            cb.on("弹幕失败", vIdx, vTotal, vTitle + "\n" + t.getMessage());
+                        }
+                    }
+
                     if (opt.videoComments) {
                         List<Reply> mains = DynExporter.fetchAll(v.aid, ReplyApi2.TYPE_VIDEO);
+                        if (opt.ipBackfill && !mains.isEmpty()) {
+                            cb.on("IP属地回填", vIdx, vTotal, vTitle);
+                            ipFilled += IpBackfill.apply(v.aid, ReplyApi2.TYPE_VIDEO, mains);
+                        }
                         File cdir = new File(vdir, "视频评论");
                         String header = "# " + vTitle + " · 视频评论\n\n"
                                 + "> 视频：https://www.bilibili.com/video/" + v.bvid + "\n"
@@ -217,6 +244,10 @@ public class UpExporter {
 
                     if (opt.dynComments && d.oid != 0) {
                         List<Reply> mains = DynExporter.fetchAll(d.oid, ReplyApi2.TYPE_DYNAMIC);
+                        if (opt.ipBackfill && !mains.isEmpty()) {
+                            cb.on("IP属地回填", dIdx, dTotal, dTitle);
+                            ipFilled += IpBackfill.apply(d.oid, ReplyApi2.TYPE_DYNAMIC, mains);
+                        }
                         File cdir = new File(ddir, "动态评论");
                         String header = "# 动态评论\n\n"
                                 + "> 动态：https://t.bilibili.com/" + d.dynIdStr + "\n"
@@ -232,7 +263,9 @@ public class UpExporter {
             }
         }
 
-        cb.on("统计", 0, 0, "整理完成" + (vFail + dFail > 0 ? ("，失败 " + (vFail + dFail) + " 项") : ""));
+        String stat = "评论 " + totalComments + " 条｜弹幕 " + totalDanmaku + " 条｜IP属地 " + ipFilled + " 条"
+                + (vFail + dFail > 0 ? ("｜失败 " + (vFail + dFail) + " 项") : "");
+        cb.on("统计", 0, 0, stat);
         long bytes = dirSize(dir);
         cb.done(dir.getAbsolutePath(), videos.size(), dyns.size(), totalComments, bytes);
     }
