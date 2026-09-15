@@ -1,7 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 通用模块：不预置任何包名。
-         安装后在 LSPosed 管理器里自行勾选要注入的目标应用（推荐作用域为空即为通用）。 -->
+    <!--
+      预置作用域：原版 + 你的共存版。
+      LSPosed 首次启用时会默认勾选这些；未列出的包仍可在管理器里手动加。
+      模块代码本身不做包名判断（见 MainHook），因此列表只是便利，不是硬限制。
+    -->
     <string-array name="xposed_scope">
+        <item>tv.danmaku.bili</item>
+        <item>com.bilibili.app.in</item>
+        <item>com.example.piliplus</item>
+        <item>com.example.piliplut</item>
+        <item>com.example.pilipluu</item>
+        <item>com.example.pilipluv</item>
+        <item>com.example.pilipluw</item>
+        <item>com.example.piliplub</item>
+        <item>com.android.purebilibili</item>
     </string-array>
 </resources>
