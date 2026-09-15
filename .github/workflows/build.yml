@@ -30,14 +30,39 @@ jobs:
           echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
           echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
 
-      - name: Accept licenses and install platform
+      - name: Accept licenses and install platform + NDK
         run: |
           set -e
           yes | sdkmanager --licenses || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;27.0.12077973"
 
       - name: Create local.properties
         run: echo "sdk.dir=$ANDROID_HOME" > local.properties
+
+      # ------------------------------------------------------------
+      # 下载预编译 libffmpeg_core.so（arm64-v8a）
+      #
+      # 来源：molihuan/hlbmerge_flutter 的 ffmpeg_xmake 子模块
+      #       （FFmpeg 7.1，仅 remux，禁用编解码器，体积 1.76 MB）
+      #
+      # 只取这一个文件，避免把整个仓库当依赖拉进来。
+      # ------------------------------------------------------------
+      - name: Fetch prebuilt libffmpeg_core.so
+        run: |
+          set -e
+          mkdir -p app/src/main/jniLibs/arm64-v8a
+          URL="https://raw.githubusercontent.com/molihuan/hlbmerge_flutter/master/ffmpeg_xmake/src/xmake/build/android/arm64-v8a/libffmpeg_core.so"
+          curl -sSL --retry 3 --retry-delay 2 -o app/src/main/jniLibs/arm64-v8a/libffmpeg_core.so "$URL"
+          ls -la app/src/main/jniLibs/arm64-v8a/
+          # 校验：ELF 且体积合理（约 1.7 MB）
+          SIZE=$(stat -c%s app/src/main/jniLibs/arm64-v8a/libffmpeg_core.so)
+          echo "so 大小：$SIZE"
+          if [ "$SIZE" -lt 500000 ]; then
+            echo "::error::libffmpeg_core.so 体积异常（$SIZE 字节），下载可能失败"
+            head -c 200 app/src/main/jniLibs/arm64-v8a/libffmpeg_core.so
+            exit 1
+          fi
+          file app/src/main/jniLibs/arm64-v8a/libffmpeg_core.so || true
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
@@ -53,6 +78,11 @@ jobs:
           F=$(find . -name 'app-release*.apk' | head -1)
           echo "path=$F" >> $GITHUB_OUTPUT
           ls -la "$F"
+          # 校验 so 已打进 APK
+          unzip -l "$F" | grep -E 'libffmpeg_core|libffmpeg_shim' || {
+            echo "::error::APK 中缺少 native 库"
+            exit 1
+          }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
