@@ -82,7 +82,7 @@ public final class CacheUi {
 
         TextView tip = new TextView(a);
         tip.setTextSize(11);
-        tip.setText("\n输出：/sdcard/Download/PiliPlus_导出/缓存合并/\n"
+        tip.setText("\n输出：/storage/emulated/0/Download/PiliPlus_导出/缓存合并/\n"
                 + "合并由 FFmpeg 7.1 完成，仅重封装不转码。\n"
                 + "需 arm64 设备；其他架构会直接报错。\n"
                 + "读取其他应用的缓存目录通常需要 Root / Shizuku。");
