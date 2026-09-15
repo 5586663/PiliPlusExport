@@ -15,12 +15,13 @@ target_link_options(ffmpeg_shim PRIVATE "-Wl,-z,max-page-size=16384")
 
 # ---- 2. 预编译 libffmpeg_core.so 作为 IMPORTED 库 ----
 #
-# 文件位置：app/src/main/jniLibs/${ANDROID_ABI}/libffmpeg_core.so
-# 该 .so 来自 hlbmerge_flutter 仓库的 ffmpeg_xmake 子模块，
-# 由 CI 在构建前下载（见 .github/workflows/build.yml）。
+# 本文件位于 app/src/main/cpp/，jniLibs 位于 app/src/main/jniLibs/
+# 因此从本目录向上 1 级即到 main/。
 #
-# 注意：只提供 arm64-v8a。若需其他 ABI，须自行用 xmake 编译。
-set(FFMPEG_CORE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../jniLibs/${ANDROID_ABI})
+# libffmpeg_core.so 来自 hlbmerge_flutter 仓库的 ffmpeg_xmake 子模块，
+# 由 CI 在构建前下载（见 .github/workflows/build.yml）。
+# 只提供 arm64-v8a。
+set(FFMPEG_CORE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../jniLibs/${ANDROID_ABI})
 
 if (NOT EXISTS "${FFMPEG_CORE_DIR}/libffmpeg_core.so")
     message(FATAL_ERROR
