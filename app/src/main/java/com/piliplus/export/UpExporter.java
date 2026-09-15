@@ -273,7 +273,7 @@ public class UpExporter {
     // ==================================================================
     private File exportRoot() {
         File d = new File("/storage/emulated/0/Download/PiliPlus_导出");
-        if (d.isDirectory() && d.canWrite()) return d;
+        if (d.isDirectory() || d.mkdirs()) return d;
         File ext = ctx.getExternalFilesDir(null);
         if (ext != null) { File f = new File(ext, "PiliPlus_导出"); f.mkdirs(); return f; }
         File f = new File(ctx.getFilesDir(), "PiliPlus_导出");
