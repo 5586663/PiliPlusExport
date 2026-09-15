@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  B站 upos CDN 的 baseUrl 常返回 http:// 直链，
+  Android 9+ 默认禁止明文流量，会导致 0 字节下载。
+  这里仅对已知 B站域名放行明文。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">bilivideo.com</domain>
+        <domain includeSubdomains="true">bilivideo.cn</domain>
+        <domain includeSubdomains="true">akamaized.net</domain>
+        <domain includeSubdomains="true">bilibili.com</domain>
+        <domain includeSubdomains="true">hdslb.com</domain>
+        <domain includeSubdomains="true">szbdyd.com</domain>
+        <domain includeSubdomains="true">mcdn.bilivideo.cn</domain>
+        <domain includeSubdomains="true">pcdn.bilivideo.cn</domain>
+    </domain-config>
+</network-security-config>
