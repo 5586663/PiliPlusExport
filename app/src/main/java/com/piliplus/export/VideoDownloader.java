@@ -11,6 +11,9 @@ import java.io.File;
  *   .tmp/a.m4s
  *
  * 合并成功后删除 .tmp。失败时保留 .tmp 便于排查，且不产出 mp4。
+ *
+ * 防盗链：B站 upos CDN 校验 Referer，必须是具体视频页；
+ *        且 upos 常返回 http:// 直链，Android 9+ 默认禁明文，需网络配置放行。
  */
 public final class VideoDownloader {
 
@@ -52,11 +55,15 @@ public final class VideoDownloader {
             r.width = d.width;
             r.height = d.height;
 
+            // 防盗链 Referer：必须是具体视频页
+            String referer = "https://www.bilibili.com/video/"
+                    + (v.bvid != null && !v.bvid.isEmpty() ? v.bvid : ("av" + v.aid));
+
             if (cb != null) cb.on("下载视频流", 0, -1);
-            downloadWithFallback(d.videoUrl, d.videoBackup, vTmp, cb, "视频流");
+            downloadWithFallback(d.videoUrl, d.videoBackup, vTmp, cb, "视频流", referer);
             if (d.audioUrl.isEmpty()) throw new Exception("无音频轨");
             if (cb != null) cb.on("下载音频流", 0, -1);
-            downloadWithFallback(d.audioUrl, d.audioBackup, aTmp, cb, "音频流");
+            downloadWithFallback(d.audioUrl, d.audioBackup, aTmp, cb, "音频流", referer);
 
             if (cb != null) cb.on("合并中", 0, -1);
             try {
@@ -85,19 +92,21 @@ public final class VideoDownloader {
     }
 
     private static void downloadWithFallback(String primary, String backup, File dest,
-                                             Progress cb, String label) throws Exception {
+                                             Progress cb, String label, String referer) throws Exception {
         try {
             HttpDownloader.download(primary, dest, (got, total) -> {
                 if (cb != null) cb.on(label, got, total);
                 return true;
-            });
+            }, referer);
         } catch (Exception e) {
             if (backup == null || backup.isEmpty()) throw e;
             if (cb != null) cb.on(label + "（备用源）", 0, -1);
+            // 主源失败：清掉可能写了一半的残留，重新下
+            try { if (dest.exists()) dest.delete(); } catch (Throwable ignored) {}
             HttpDownloader.download(backup, dest, (got, total) -> {
                 if (cb != null) cb.on(label + "（备用源）", got, total);
                 return true;
-            });
+            }, referer);
         }
     }
 }
