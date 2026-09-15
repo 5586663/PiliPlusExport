@@ -16,7 +16,7 @@ import java.util.List;
  *   4. 默认关闭，仅用户手动开启后生效；每次开启只 dump 一次即自动关闭
  *   5. 文件可随时手动删除
  *
- * 输出路径：/sdcard/Documents/RikkaHub/debug_proto.txt
+ * 输出路径：/storage/emulated/0/Download/PiliPlus_导出/调试/debug_proto.txt
  */
 public final class DebugDump {
 
@@ -25,7 +25,7 @@ public final class DebugDump {
     /** 是否启用。默认 false。开启后 dump 一次即自动置回 false。 */
     public static volatile boolean ENABLED = false;
 
-    private static final String OUT_DIR = "/sdcard/Documents/RikkaHub";
+    private static final String OUT_DIR = "/storage/emulated/0/Download/PiliPlus_导出/调试";
     private static final String OUT_FILE = OUT_DIR + "/debug_proto.txt";
 
     /**
