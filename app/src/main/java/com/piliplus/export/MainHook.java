@@ -48,6 +48,7 @@ public class MainHook implements IXposedHookLoadPackage {
     private static final String TAG_COMMENT = "pili_export_fab_comment";
     private static final String TAG_UP = "pili_export_fab_up";
     private static final String TAG_CACHE = "pili_export_fab_cache";
+    private static final String TAG_DEBUG = "pili_export_fab_debug";
 
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lp) {
@@ -101,6 +102,19 @@ public class MainHook implements IXposedHookLoadPackage {
                 b3.setLayoutParams(lp3);
                 b3.setOnClickListener(v -> CacheUi.show(a));
                 decor.addView(b3);
+
+            if (decor.findViewWithTag(TAG_DEBUG) == null) {
+                Button b4 = makeButton(a, "调试", "#666666");
+                b4.setTag(TAG_DEBUG);
+                FrameLayout.LayoutParams lp4 = new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                lp4.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
+                lp4.rightMargin = dp(a, 8);
+                lp4.bottomMargin = dp(a, 200);
+                b4.setLayoutParams(lp4);
+                b4.setOnClickListener(v -> askDebug(a));
+                decor.addView(b4);
+            }
             }
             }
         } catch (Throwable ignored) {
@@ -379,6 +393,43 @@ public class MainHook implements IXposedHookLoadPackage {
         } catch (Throwable t) { return null; }
     }
 
+
+    // ==================================================================
+    private static void askDebug(Activity a) {
+        new AlertDialog.Builder(a)
+                .setTitle("调试转储")
+                .setMessage("开启后，下一次评论请求会把 protobuf 结构\n"
+                        + "（仅字段号与字节长度，不含任何内容）\n"
+                        + "写入：\n" + DebugDump.outPath()
+                        + "\n\n写完后自动关闭。仅本机文件，不联网。")
+                .setPositiveButton("开启", (d, w) -> {
+                    DebugDump.ENABLED = true;
+                    toast(a, "已开启，去导出一次评论");
+                })
+                .setNeutralButton("查看结果", (d, w) -> showDebugResult(a))
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private static void showDebugResult(Activity a) {
+        String s = DebugDump.read();
+        if (s == null || s.isEmpty()) {
+            toast(a, "尚无转储文件");
+            return;
+        }
+        TextView tv = new TextView(a);
+        tv.setTextSize(11);
+        tv.setTextIsSelectable(true);
+        tv.setPadding(32, 32, 32, 32);
+        tv.setText(s);
+        ScrollView sv = new ScrollView(a);
+        sv.addView(tv);
+        new AlertDialog.Builder(a)
+                .setTitle("转储内容")
+                .setView(sv)
+                .setPositiveButton("关闭", null)
+                .show();
+    }
     private static void toast(Context c, String s) {
         Toast.makeText(c, s, Toast.LENGTH_SHORT).show();
     }
