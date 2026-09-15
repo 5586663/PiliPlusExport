@@ -23,8 +23,8 @@ public final class MdWriter {
         b.append('\n');
 
         if (style == Style.TABLE) {
-            b.append("| 楼层 | 昵称 | UID | 点赞 | 时间 | 内容 |\n");
-            b.append("|------|------|-----|------|------|------|\n");
+            b.append("| 楼层 | 昵称 | UID | 点赞 | 时间 | IP属地 | 内容 |\n");
+            b.append("|------|------|-----|------|------|--------|------|\n");
         } else {
             b.append("---\n\n");
         }
@@ -49,6 +49,7 @@ public final class MdWriter {
         b.append("### ").append(idx).append(". ").append(name(m)).append("\n\n");
         b.append("> UID：").append(m.mid).append("　点赞：").append(m.like)
          .append("　时间：").append(fmt(m.ctime));
+        if (ip(m) != null) b.append("　IP属地：").append(ip(m));
         if (m.count > 0) b.append("　楼中楼：").append(m.subs.size()).append('/').append(m.count);
         b.append("\n\n");
         b.append(body(m)).append("\n\n");
@@ -60,6 +61,7 @@ public final class MdWriter {
             StringBuilder meta = new StringBuilder();
             if (s.like > 0) meta.append("点赞 ").append(s.like);
             if (s.ctime > 0) { if (meta.length() > 0) meta.append(" · "); meta.append(fmt(s.ctime)); }
+            if (ip(s) != null) { if (meta.length() > 0) meta.append(" · "); meta.append("IP属地 ").append(ip(s)); }
             if (meta.length() > 0) b.append("> ").append(meta).append("\n\n");
             b.append(body(s)).append("\n\n");
         }
@@ -69,25 +71,25 @@ public final class MdWriter {
     private static void table(StringBuilder b, Reply m, int idx) {
         b.append("| ").append(idx).append(" | ").append(name(m)).append(" | ").append(m.mid)
          .append(" | ").append(m.like).append(" | ").append(fmt(m.ctime))
-         .append(" | ").append(cell(body(m))).append(" |\n");
+         .append(" | ").append(ipCell(m)).append(" | ").append(cell(body(m))).append(" |\n");
         for (Reply s : m.subs) {
             b.append("| ↳ | ").append(name(s)).append(" | ").append(s.mid)
              .append(" | ").append(s.like).append(" | ").append(fmt(s.ctime))
-             .append(" | ").append(cell(body(s))).append(" |\n");
+             .append(" | ").append(ipCell(s)).append(" | ").append(cell(body(s))).append(" |\n");
         }
     }
 
     private static void chat(StringBuilder b, Reply m) {
-        b.append("**").append(name(m)).append("**(").append(m.mid).append(")：").append(body(m)).append("\n\n");
+        b.append("**").append(name(m)).append("**(").append(m.mid).append(")").append(ipSuffix(m)).append("：").append(body(m)).append("\n\n");
         for (Reply s : m.subs)
-            b.append("> **").append(name(s)).append("**(").append(s.mid).append(")：").append(body(s)).append('\n');
+            b.append("> **").append(name(s)).append("**(").append(s.mid).append(")").append(ipSuffix(s)).append("：").append(body(s)).append('\n');
         if (!m.subs.isEmpty()) b.append('\n');
     }
 
     private static void plain(StringBuilder b, Reply m) {
-        b.append(name(m)).append("：").append(body(m)).append("\n\n");
+        b.append(name(m)).append(ipSuffix(m)).append("：").append(body(m)).append("\n\n");
         for (Reply s : m.subs)
-            b.append("  - ").append(name(s)).append("：").append(body(s)).append('\n');
+            b.append("  - ").append(name(s)).append(ipSuffix(s)).append("：").append(body(s)).append('\n');
         if (!m.subs.isEmpty()) b.append('\n');
     }
 
@@ -98,6 +100,11 @@ public final class MdWriter {
         return s.isEmpty() ? "_（空）_" : s;
     }
     private static String cell(String s) { return s.replace("|", "\\|").replace("\n", "<br>"); }
+
+    /** IP 属地，空则返回 null */
+    private static String ip(Reply r) { return r.location == null || r.location.trim().isEmpty() ? null : r.location.trim(); }
+    private static String ipCell(Reply r) { String s = ip(r); return s == null ? "" : cell(s); }
+    private static String ipSuffix(Reply r) { String s = ip(r); return s == null ? "" : "[IP属地 " + s + "]"; }
 
     private static String fmt(long sec) {
         if (sec <= 0) return "";
