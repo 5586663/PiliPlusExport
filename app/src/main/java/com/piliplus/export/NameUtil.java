@@ -1,5 +1,7 @@
 package com.piliplus.export;
 
+import java.io.File;
+
 /** 文件名与目录名清洗 */
 public final class NameUtil {
 
@@ -16,6 +18,24 @@ public final class NameUtil {
     /** 目录名前缀序号，保证排序稳定且不重名 */
     public static String indexed(int idx, String title) {
         return String.format(java.util.Locale.CHINA, "%03d_%s", idx, safe(title));
+    }
+
+    /**
+     * 返回一个不会覆盖已有文件的 File。
+     * 若 base+ext 已存在，依次尝试 base(0)+ext、base(1)+ext …
+     *
+     * 对应 hlbmerge 的 FileUtil.getAvailableFilePath()。
+     */
+    public static File availableFile(File dir, String base, String ext) {
+        if (dir != null && !dir.exists()) dir.mkdirs();
+        File f = new File(dir, base + ext);
+        int i = 0;
+        while (f.exists()) {
+            f = new File(dir, base + "(" + i + ")" + ext);
+            i++;
+            if (i > 9999) break;   // 防御性上限
+        }
+        return f;
     }
 
     /** 从 URL 猜图片扩展名，默认 .jpg */
