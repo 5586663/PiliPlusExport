@@ -3,98 +3,60 @@ package com.piliplus.export;
 import android.content.Context;
 
 import java.io.File;
-import java.io.FileOutputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
-/** 导出编排：拉全量主评论 + 展开全部楼中楼 + 落盘 */
+/**
+ * 单视频评论导出。
+ *
+ * 输出：/storage/emulated/0/Download/PiliPlus_导出/单视频/<标题>/
+ *        视频信息.md
+ *        视频评论/评论.md
+ *        视频评论/评论图片/评论N.jpg
+ */
 public class Exporter {
 
     public interface Progress {
         void on(String stage, int main, int sub);
-        void done(String path, int main, int sub, long apiCount);
+        void done(String path, int main, int sub, int pics, long apiCount);
         void error(String msg);
     }
 
-    /** 楼层之间至少 70ms，避免风控 */
     private static final long THROTTLE_MS = 70;
-    /** 主评论连续多少页无新增就停 */
     private static final int NO_NEW_LIMIT = 12;
-    /** 楼中楼连续多少页重复就停 */
-    private static final int SUB_STALL_LIMIT = 2;
 
     private final Context ctx;
     private final Progress cb;
 
     public Exporter(Context ctx, Progress cb) { this.ctx = ctx; this.cb = cb; }
 
-    public void run(String videoId, MdWriter.Style style) {
+    public void run(String videoId, boolean withPics) {
         new Thread(() -> {
             try {
                 BiliApi.Video v = BiliApi.videoInfo(videoId);
                 if (v.aid == 0) { cb.error("取视频信息失败：" + videoId); return; }
                 cb.on("视频：" + v.title, 0, 0);
 
-                // ---------- 1. 主评论全量（mode=3 热度） ----------
-                List<Reply> mains = new ArrayList<>();
-                Set<Long> seen = new HashSet<>();
-                long cursor = 0;
-                String offset = null;
-                int noNew = 0;
-                long apiTotal = 0;
+                List<Reply> mains = fetchAll(v.aid, ReplyApi2.TYPE_VIDEO, v.title);
+                int sub = 0;
+                for (Reply m : mains) sub += m.subs.size();
 
-                for (int pg = 0; pg < 2000; pg++) {
-                    if (pg > 0) sleep(THROTTLE_MS);
-                    BiliApi.Page p = BiliApi.mainList(v.aid, cursor, 3, offset);
-                    if (p.totalCount > 0) apiTotal = p.totalCount;
+                File root = exportRoot();
+                File dir = new File(root, NameUtil.safe(v.title));
+                if (!dir.exists() && !dir.mkdirs()) throw new Exception("无法创建目录：" + dir);
 
-                    int add = 0;
-                    for (Reply r : p.replies) {
-                        if (seen.add(r.id)) { mains.add(r); add++; }
-                    }
-                    cb.on("拉取主评论", mains.size(), 0);
-                    noNew = add > 0 ? 0 : noNew + 1;
-                    if (noNew >= NO_NEW_LIMIT || p.replies.isEmpty()) break;
+                CommentSaver.writeFile(new File(dir, "视频信息.md"),
+                        "# " + v.title + "\n\n> 视频：https://www.bilibili.com/video/" + v.bvid
+                        + "\n> 导出：" + MdWriter2.now() + "\n");
 
-                    if (p.nextCursor != 0) cursor = p.nextCursor;
-                    if (p.nextOffset != null) offset = p.nextOffset;
-                    if (p.isEnd && add == 0) break;
-                }
-
-                // ---------- 2. 楼中楼全量 ----------
-                int subTotal = 0;
-                Set<Long> subSeen = new HashSet<>();
-                for (int i = 0; i < mains.size(); i++) {
-                    Reply m = mains.get(i);
-                    for (Reply s : m.subs) subSeen.add(s.id);
-
-                    if (m.count > m.subs.size()) {
-                        sleep(THROTTLE_MS);
-                        List<Reply> extra = fetchSubs(v.aid, m.id);
-                        for (Reply s : extra) {
-                            if (s.id != 0 && subSeen.add(s.id)) m.subs.add(s);
-                        }
-                    }
-                    subTotal = subSeen.size();
-                    if ((i + 1) % 50 == 0) cb.on("展开楼中楼", i + 1, subTotal);
-                }
-
-                // ---------- 3. 渲染落盘 ----------
-                cb.on("写入文件", mains.size(), subTotal);
-                String md = MdWriter.render(v, mains, style, subTotal);
-
-                File dir = new File("/storage/emulated/0/Download");
-                if (!dir.isDirectory() || !dir.canWrite()) dir = ctx.getExternalFilesDir(null);
-                if (dir == null) dir = ctx.getFilesDir();
-
-                File out = new File(dir, MdWriter.safeName(v.title) + "_评论.md");
-                try (FileOutputStream fos = new FileOutputStream(out)) {
-                    fos.write(md.getBytes(StandardCharsets.UTF_8));
-                }
-                cb.done(out.getAbsolutePath(), mains.size(), subTotal, v.replyCount);
+                File cdir = new File(dir, "视频评论");
+                String header = "# " + v.title + " · 视频评论\n\n"
+                        + "> 视频：https://www.bilibili.com/video/" + v.bvid + "\n"
+                        + "> 主评论 " + mains.size() + " 条，楼中楼 " + sub + " 条\n"
+                        + (v.replyCount > 0 ? ("> 接口报告 " + v.replyCount + " 条\n") : "")
+                        + "> 导出：" + MdWriter2.now() + "\n";
+                int[] st = CommentSaver.save(cdir, header, mains, withPics, null);
+                cb.done(cdir.getAbsolutePath(), mains.size(), sub, st[1], v.replyCount);
 
             } catch (Throwable t) {
                 cb.error(t.getClass().getSimpleName() + ": " + t.getMessage());
@@ -102,42 +64,51 @@ public class Exporter {
         }, "pili-export").start();
     }
 
-    /** 拉一条主评论下的全部楼中楼，带重复页检测 */
-    private List<Reply> fetchSubs(long aid, long root) {
-        List<Reply> out = new ArrayList<>();
-        Set<Long> ids = new HashSet<>();
+    private List<Reply> fetchAll(long aid, int type, String title) {
+        List<Reply> mains = new ArrayList<>();
+        java.util.Set<Long> seen = new java.util.HashSet<>();
         long cursor = 0;
         String offset = null;
-        String prevKey = "";
-        int stall = 0;
+        int noNew = 0;
 
-        for (int pg = 0; pg < 500; pg++) {
-            if (pg > 0) sleep(30);
-            BiliApi.SubPage sp;
+        for (int pg = 0; pg < 2000; pg++) {
+            if (pg > 0) sleep(THROTTLE_MS);
+            ReplyApi2.Page p;
             try {
-                sp = BiliApi.detailList(aid, root, cursor, 2, offset);
-            } catch (Exception e) {
-                break;
-            }
-            if (sp.replies.isEmpty()) break;
-
-            StringBuilder key = new StringBuilder();
-            for (Reply r : sp.replies) key.append(r.id).append(',');
-            if (key.toString().equals(prevKey)) {
-                if (++stall >= SUB_STALL_LIMIT) break;
-            } else {
-                stall = 0;
-                prevKey = key.toString();
-            }
-
+                p = ReplyApi2.mainList(aid, type, cursor, 3, offset);
+            } catch (Exception e) { break; }
             int add = 0;
-            for (Reply r : sp.replies) if (r.id != 0 && ids.add(r.id)) { out.add(r); add++; }
-            if (add == 0 && stall > 0) break;
-            if (sp.replies.size() < 20) break;
-            if (sp.nextCursor != 0) cursor = sp.nextCursor;
-            if (sp.nextOffset != null) offset = sp.nextOffset;
+            for (Reply r : p.replies) if (seen.add(r.id)) { mains.add(r); add++; }
+            cb.on("拉取主评论", mains.size(), 0);
+            noNew = add > 0 ? 0 : noNew + 1;
+            if (noNew >= NO_NEW_LIMIT || p.replies.isEmpty()) break;
+            if (p.nextCursor != 0) cursor = p.nextCursor;
+            if (p.nextOffset != null) offset = p.nextOffset;
+            if (p.isEnd && add == 0) break;
         }
-        return out;
+
+        java.util.Set<Long> subSeen = new java.util.HashSet<>();
+        for (int i = 0; i < mains.size(); i++) {
+            Reply m = mains.get(i);
+            for (Reply s : m.subs) subSeen.add(s.id);
+            if (m.count > m.subs.size()) {
+                sleep(THROTTLE_MS);
+                List<Reply> extra = DynExporter.fetchSubs(aid, type, m.id);
+                for (Reply s : extra) if (s.id != 0 && subSeen.add(s.id)) m.subs.add(s);
+            }
+            if ((i + 1) % 50 == 0) cb.on("展开楼中楼", i + 1, subSeen.size());
+        }
+        return mains;
+    }
+
+    private File exportRoot() {
+        File d = new File("/storage/emulated/0/Download/PiliPlus_导出/单视频");
+        if (d.isDirectory() || d.mkdirs()) return d;
+        File ext = ctx.getExternalFilesDir(null);
+        if (ext != null) { File f = new File(ext, "PiliPlus_导出/单视频"); f.mkdirs(); return f; }
+        File f = new File(ctx.getFilesDir(), "PiliPlus_导出/单视频");
+        f.mkdirs();
+        return f;
     }
 
     private static void sleep(long ms) {
