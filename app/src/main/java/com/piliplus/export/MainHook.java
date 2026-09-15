@@ -20,6 +20,7 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -34,14 +35,14 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 /**
  * Xposed 入口。
  *
- * 每个 Activity 的 decorView 上分别注入两个悬浮按钮（用 tag 判重，
- * 不依赖静态引用，避免旧 Activity 的残留引用导致新页面不注入）。
+ * 不判断 packageName —— 由 LSPosed 作用域决定注入哪些应用，
+ * 因此同一份模块可同时用于原版与共存版 PiliPlus。
+ * 悬浮按钮用 tag 判重，每个 decorView 独立注入。
  */
 public class MainHook implements IXposedHookLoadPackage {
 
     private static final Pattern BV = Pattern.compile("BV[0-9A-Za-z]{10}");
-    private static final Pattern MID_IN_URL =
-            Pattern.compile("space\\.bilibili\\.com/(\\d+)");
+    private static final Pattern MID_IN_URL = Pattern.compile("space\\.bilibili\\.com/(\\d+)");
     private static final Pattern DIGITS = Pattern.compile("(\\d{2,})");
 
     private static final String TAG_COMMENT = "pili_export_fab_comment";
@@ -68,13 +69,12 @@ public class MainHook implements IXposedHookLoadPackage {
                 Button b1 = makeButton(a, "导出评论", "#FB7299");
                 b1.setTag(TAG_COMMENT);
                 FrameLayout.LayoutParams lp1 = new FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT);
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
                 lp1.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
                 lp1.rightMargin = dp(a, 8);
                 lp1.bottomMargin = dp(a, 96);
                 b1.setLayoutParams(lp1);
-                b1.setOnClickListener(v -> askVideoId(a));
+                b1.setOnClickListener(v -> askVideoId(a, false));
                 decor.addView(b1);
             }
 
@@ -82,8 +82,7 @@ public class MainHook implements IXposedHookLoadPackage {
                 Button b2 = makeButton(a, "导出UP主", "#FF6699");
                 b2.setTag(TAG_UP);
                 FrameLayout.LayoutParams lp2 = new FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT);
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
                 lp2.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
                 lp2.rightMargin = dp(a, 8);
                 b2.setLayoutParams(lp2);
@@ -114,72 +113,74 @@ public class MainHook implements IXposedHookLoadPackage {
     }
 
     // ==================================================================
-    private static void askVideoId(Activity a) {
-        String fromClip = readClipBv(a);
-        if (fromClip != null) {
-            exportOneVideo(a, fromClip);
-            return;
+    /**
+     * @param skipClip true 时不做剪贴板预填/预检，直接显示输入框。
+     *                 用于用户主动选择"手动输入"，避免读取或改动剪贴板。
+     */
+    private static void askVideoId(Activity a, boolean skipClip) {
+        String pre = null;
+        if (!skipClip) {
+            String fromClip = readClipBv(a);
+            if (fromClip != null) { confirmOneVideo(a, fromClip); return; }
+        } else {
+            pre = readClipRaw(a);
         }
+
+        LinearLayout box = new LinearLayout(a);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(48, 24, 48, 24);
+
         EditText et = new EditText(a);
         et.setHint("BV1xxxxxxxxx 或 av123456");
+        box.addView(et);
+
+        CheckBox cb = new CheckBox(a);
+        cb.setText("下载评论图片");
+        cb.setChecked(true);
+        box.addView(cb);
+
         new AlertDialog.Builder(a)
-                .setTitle("导出评论区 Markdown")
-                .setView(et)
+                .setTitle("导出单个视频评论")
+                .setView(box)
                 .setPositiveButton("开始", (d, w) -> {
                     String s = et.getText().toString().trim();
                     Matcher m = BV.matcher(s);
                     if (m.find()) s = m.group();
                     if (s.isEmpty()) { toast(a, "请输入视频号"); return; }
-                    exportOneVideo(a, s);
+                    exportOneVideo(a, s, cb.isChecked());
                 })
                 .setNegativeButton("取消", null)
                 .show();
     }
 
-    private static String readClipBv(Context c) {
-        try {
-            String t = readClip(c);
-            if (t == null) return null;
-            Matcher m = BV.matcher(t);
-            return m.find() ? m.group() : null;
-        } catch (Throwable t) { return null; }
+    private static void confirmOneVideo(Activity a, String bv) {
+        new AlertDialog.Builder(a)
+                .setTitle("检测到剪贴板中的视频号")
+                .setMessage(bv + "\n\n直接导出该视频评论？")
+                .setPositiveButton("导出", (d, w) -> exportOneVideo(a, bv, true))
+                .setNegativeButton("手动输入", (d, w) -> askVideoId(a, true))
+                .show();
     }
 
-    private static void exportOneVideo(Activity a, String videoId) {
+    private static void exportOneVideo(Activity a, String videoId, boolean withPics) {
         injectCookie();
-
-        LinearLayout box = new LinearLayout(a);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(48, 36, 48, 36);
-        TextView tv = new TextView(a);
-        tv.setTextSize(14);
-        tv.setText("准备中…");
-        box.addView(tv);
-
-        AlertDialog dlg = new AlertDialog.Builder(a)
-                .setTitle("正在导出")
-                .setView(box)
-                .setCancelable(false)
-                .setNegativeButton("后台运行", (d, w) -> {})
-                .create();
-        dlg.show();
+        AlertDialog dlg = progressDialog(a, "正在导出评论");
+        TextView tv = (TextView) dlg.findViewById(android.R.id.message);
 
         Handler ui = new Handler(Looper.getMainLooper());
         Exporter ex = new Exporter(a.getApplicationContext(), new Exporter.Progress() {
             @Override public void on(String stage, int main, int sub) {
-                ui.post(() -> tv.setText(stage + "　主 " + main + "　楼 " + sub));
+                ui.post(() -> { if (tv != null) tv.setText(stage + "　主 " + main + "　楼 " + sub); });
             }
-            @Override public void done(String path, int main, int sub, long api) {
+            @Override public void done(String path, int main, int sub, int pics, long api) {
                 ui.post(() -> {
                     if (dlg.isShowing()) dlg.dismiss();
                     new AlertDialog.Builder(a)
                             .setTitle("导出完成")
-                            .setMessage("主评论 " + main + " 条\n楼中楼 " + sub + " 条\n合计 "
-                                    + (main + sub) + " 条"
-                                    + (api > 0 ? "\n接口报告 " + api + " 条" : "")
-                                    + "\n\n文件：\n" + path)
-                            .setPositiveButton("好", null)
-                            .show();
+                            .setMessage("主评论 " + main + " 条\n楼中楼 " + sub + " 条\n图片 " + pics + " 张"
+                                    + (api > 0 ? ("\n接口报告 " + api + " 条") : "")
+                                    + "\n\n目录：\n" + path)
+                            .setPositiveButton("好", null).show();
                 });
             }
             @Override public void error(String msg) {
@@ -190,16 +191,18 @@ public class MainHook implements IXposedHookLoadPackage {
                 });
             }
         });
-        ex.run(videoId, MdWriter.Style.HEADING);
+        ex.run(videoId, withPics);
     }
 
     // ==================================================================
     private static void askUpId(Activity a) {
         long fromClip = readClipMid(a);
 
+        ScrollView sv = new ScrollView(a);
         LinearLayout box = new LinearLayout(a);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(48, 24, 48, 24);
+        sv.addView(box);
 
         TextView t1 = new TextView(a);
         t1.setText("UP主 UID 或主页链接：");
@@ -216,43 +219,50 @@ public class MainHook implements IXposedHookLoadPackage {
 
         RadioGroup rg = new RadioGroup(a);
         rg.setOrientation(RadioGroup.VERTICAL);
-        RadioButton r1 = new RadioButton(a);
-        r1.setText("仅视频（清单 + 全部评论）");
-        r1.setId(1);
-        RadioButton r2 = new RadioButton(a);
-        r2.setText("仅动态（含发布时间）");
-        r2.setId(2);
-        RadioButton r3 = new RadioButton(a);
-        r3.setText("视频 + 动态（全部）");
-        r3.setId(3);
-        rg.addView(r1);
-        rg.addView(r2);
-        rg.addView(r3);
+        RadioButton r1 = new RadioButton(a); r1.setText("仅视频"); r1.setId(1);
+        RadioButton r2 = new RadioButton(a); r2.setText("仅动态"); r2.setId(2);
+        RadioButton r3 = new RadioButton(a); r3.setText("视频 + 动态"); r3.setId(3);
+        rg.addView(r1); rg.addView(r2); rg.addView(r3);
         rg.check(3);
         box.addView(rg);
 
-        CheckBox cb = new CheckBox(a);
-        cb.setText("含视频评论（极慢，可能数小时）");
-        cb.setChecked(true);
-        box.addView(cb);
+        TextView t3 = new TextView(a);
+        t3.setText("\n附加：");
+        box.addView(t3);
+
+        CheckBox cbVC = new CheckBox(a); cbVC.setText("视频评论"); cbVC.setChecked(true); box.addView(cbVC);
+        CheckBox cbDC = new CheckBox(a); cbDC.setText("动态评论"); cbDC.setChecked(true); box.addView(cbDC);
+        CheckBox cbPic = new CheckBox(a); cbPic.setText("评论图片 / 动态图片"); cbPic.setChecked(true); box.addView(cbPic);
+        CheckBox cbVid = new CheckBox(a); cbVid.setText("下载视频文件（dash 高清，极慢、占空间大）"); cbVid.setChecked(false); box.addView(cbVid);
 
         TextView tip = new TextView(a);
         tip.setTextSize(12);
-        tip.setText("不含评论时通常 1~3 分钟。\n"
-                + "含评论时逐视频拉取，视规模可能数小时。\n"
+        tip.setText("\n目录：<UP名>/视频/<序号_标题>/、<UP名>/动态/<序号_标题>/\n"
+                + "视频文件由 dash 分离流下载后经本机 MediaMuxer 合并。\n"
+                + "不含视频文件时通常数分钟；含视频时视规模可能数小时。\n"
                 + "建议保持前台，锁屏可能被系统挂起。");
         tip.setPadding(0, dp(a, 12), 0, 0);
         box.addView(tip);
 
         new AlertDialog.Builder(a)
                 .setTitle("导出 UP 主内容")
-                .setView(box)
+                .setView(sv)
                 .setPositiveButton("开始", (d, w) -> {
                     long mid = parseMid(et.getText().toString().trim());
                     if (mid <= 0) { toast(a, "请输入有效 UID"); return; }
                     int mode = rg.getCheckedRadioButtonId();
-                    if (mode <= 0) mode = UpExporter.MODE_ALL;
-                    exportUp(a, mid, mode, cb.isChecked());
+                    if (mode <= 0) mode = 3;
+
+                    UpExporter.Options opt = new UpExporter.Options();
+                    opt.videos = (mode == 1 || mode == 3);
+                    opt.dyns = (mode == 2 || mode == 3);
+                    opt.videoComments = opt.videos && cbVC.isChecked();
+                    opt.dynComments = opt.dyns && cbDC.isChecked();
+                    opt.commentPics = cbPic.isChecked();
+                    opt.dynPics = cbPic.isChecked();
+                    opt.downloadVideo = opt.videos && cbVid.isChecked();
+
+                    exportUp(a, mid, opt);
                 })
                 .setNegativeButton("取消", null)
                 .show();
@@ -274,30 +284,16 @@ public class MainHook implements IXposedHookLoadPackage {
 
     private static long readClipMid(Context c) {
         try {
-            String t = readClip(c);
+            String t = readClipRaw(c);
             if (t == null) return 0;
             return parseMid(t);
         } catch (Throwable t) { return 0; }
     }
 
-    private static void exportUp(Activity a, long mid, int mode, boolean withComments) {
+    private static void exportUp(Activity a, long mid, UpExporter.Options opt) {
         injectCookie();
-
-        LinearLayout box = new LinearLayout(a);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(48, 36, 48, 36);
-        TextView tv = new TextView(a);
-        tv.setTextSize(14);
-        tv.setText("准备中…");
-        box.addView(tv);
-
-        AlertDialog dlg = new AlertDialog.Builder(a)
-                .setTitle("正在导出 UP 主")
-                .setView(box)
-                .setCancelable(false)
-                .setNegativeButton("后台运行", (d, w) -> {})
-                .create();
-        dlg.show();
+        AlertDialog dlg = progressDialog(a, "正在导出 UP 主");
+        TextView tv = (TextView) dlg.findViewById(android.R.id.message);
 
         Handler ui = new Handler(Looper.getMainLooper());
         UpExporter ex = new UpExporter(a.getApplicationContext(), new UpExporter.Progress() {
@@ -307,17 +303,16 @@ public class MainHook implements IXposedHookLoadPackage {
                 else if (cur > 0) line += "  " + cur;
                 if (detail != null && !detail.isEmpty()) line += "\n" + detail;
                 final String s = line;
-                ui.post(() -> tv.setText(s));
+                ui.post(() -> { if (tv != null) tv.setText(s); });
             }
             @Override public void done(String dir, int videos, int dyns, long comments, long bytes) {
                 ui.post(() -> {
                     if (dlg.isShowing()) dlg.dismiss();
                     new AlertDialog.Builder(a)
                             .setTitle("导出完成")
-                            .setMessage("视频 " + videos + " 个\n动态 " + dyns + " 条\n评论 "
-                                    + comments + " 条\n体积 " + (bytes / 1024) + " KB\n\n目录：\n" + dir)
-                            .setPositiveButton("好", null)
-                            .show();
+                            .setMessage("视频 " + videos + " 个\n动态 " + dyns + " 条\n主评论 "
+                                    + comments + " 条\n体积 " + (bytes / 1024 / 1024) + " MB\n\n目录：\n" + dir)
+                            .setPositiveButton("好", null).show();
                 });
             }
             @Override public void error(String msg) {
@@ -328,10 +323,21 @@ public class MainHook implements IXposedHookLoadPackage {
                 });
             }
         });
-        ex.run(mid, MdWriter.Style.HEADING, mode, withComments);
+        ex.run(mid, opt);
     }
 
     // ==================================================================
+    private static AlertDialog progressDialog(Activity a, String title) {
+        AlertDialog d = new AlertDialog.Builder(a)
+                .setTitle(title)
+                .setMessage("准备中…")
+                .setCancelable(false)
+                .setNegativeButton("后台运行", (dd, w) -> {})
+                .create();
+        d.show();
+        return d;
+    }
+
     private static void injectCookie() {
         try {
             String ck = CookieManager.getInstance().getCookie("https://api.bilibili.com");
@@ -340,7 +346,16 @@ public class MainHook implements IXposedHookLoadPackage {
         } catch (Throwable ignored) {}
     }
 
-    private static String readClip(Context c) {
+    private static String readClipBv(Context c) {
+        try {
+            String t = readClipRaw(c);
+            if (t == null) return null;
+            Matcher m = BV.matcher(t);
+            return m.find() ? m.group() : null;
+        } catch (Throwable t) { return null; }
+    }
+
+    private static String readClipRaw(Context c) {
         try {
             ClipboardManager cm = (ClipboardManager) c.getSystemService(Context.CLIPBOARD_SERVICE);
             if (cm == null || !cm.hasPrimaryClip()) return null;
