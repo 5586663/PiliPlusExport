@@ -11,6 +11,7 @@ import java.util.List;
  *
  * 输出：/storage/emulated/0/Download/PiliPlus_导出/单视频/<标题>/
  *        视频信息.md
+ *        视频.mp4                 （可选，dash 分离流下载后本机 MediaMuxer 合并）
  *        视频.xml                 （弹幕，与视频同名，播放器自动挂载）
  *        弹幕.md
  *        视频评论/评论.md
@@ -34,6 +35,8 @@ public class Exporter {
     public boolean danmaku = true;
     /** 是否回填评论 IP 属地 */
     public boolean ipBackfill = true;
+    /** 是否下载视频文件（dash 高清，极慢、占空间大） */
+    public boolean downloadVideo = false;
 
     public Exporter(Context ctx, Progress cb) { this.ctx = ctx; this.cb = cb; }
 
@@ -55,6 +58,28 @@ public class Exporter {
                 CommentSaver.writeFile(new File(dir, "视频信息.md"),
                         "# " + v.title + "\n\n> 视频：https://www.bilibili.com/video/" + v.bvid
                         + "\n> 导出：" + MdWriter2.now() + "\n");
+
+                // ---- 下载视频文件 ----
+                if (downloadVideo) {
+                    try {
+                        VideoItem vi = new VideoItem();
+                        vi.aid = v.aid;
+                        vi.bvid = v.bvid;
+                        vi.title = v.title;
+                        vi.duration = v.duration;
+                        cb.on("下载视频中", 0, 0);
+                        VideoDownloader.Result dr = VideoDownloader.download(vi, dir, (stage, got, total) -> {
+                            String det = total > 0
+                                    ? (got / 1048576) + "MB/" + (total / 1048576) + "MB"
+                                    : (got / 1048576) + "MB";
+                            cb.on("下载视频 · " + stage + " " + det, 0, 0);
+                        });
+                        if (dr.ok) cb.on("视频下载完成 " + (dr.bytes / 1048576) + "MB", 0, 0);
+                        else cb.on("视频下载失败：" + dr.error, 0, 0);
+                    } catch (Throwable t) {
+                        cb.on("视频下载异常：" + t.getMessage(), 0, 0);
+                    }
+                }
 
                 // ---- 弹幕 ----
                 if (danmaku) {
