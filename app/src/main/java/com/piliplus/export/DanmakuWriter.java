@@ -54,7 +54,7 @@ public final class DanmakuWriter {
     }
 
     /** 写出到视频文件夹；空列表不写文件。返回写出条数。 */
-    public static int write(File videoDir, String title, List<DanmakuApi.Item> list) {
+    public static int write(File videoDir, String title, List<DanmakuApi.Item> list) throws Exception {
         if (list == null || list.isEmpty()) return 0;
         if (!videoDir.exists()) videoDir.mkdirs();
         CommentSaver.writeFile(new File(videoDir, XML_NAME), toXml(list));
