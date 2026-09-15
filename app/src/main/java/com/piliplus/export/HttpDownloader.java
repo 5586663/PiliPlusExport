@@ -135,15 +135,32 @@ public final class HttpDownloader {
         }
     }
 
-    /** 小文件整块下载（评论图片），返回是否成功 */
+    /**
+     * 小文件整块下载（评论图片），返回是否成功。
+     *
+     * 两层防护：
+     *   1. 先下到 .part，完整成功后再原子重命名到目标文件；中途失败时目标文件不受污染，
+     *      重跑会重新下载，不会被 file.length()>0 误判跳过（旧版 bug：半截文件永久残留）
+     *   2. 最多重试 3 次，间隔递增；大图（如 4MB）在慢网下 stall 时能自愈
+     */
     public static boolean downloadSmall(String url, File file) {
-        try {
-            if (file.exists() && file.length() > 0) return true;
-            download(url, file, null, "https://www.bilibili.com/");
-            return file.exists() && file.length() > 0;
-        } catch (Throwable t) {
-            return false;
+        if (file.exists() && file.length() > 0) return true;
+        File part = new File(file.getAbsolutePath() + ".part");
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            try {
+                if (part.exists()) part.delete();
+                download(url, part, null, "https://www.bilibili.com/");
+                if (part.exists() && part.length() > 0) {
+                    if (file.exists()) file.delete();
+                    if (part.renameTo(file)) return true;
+                }
+            } catch (Throwable t) {
+                // 吞掉，进入下一轮重试
+            }
+            try { Thread.sleep(300L * attempt); } catch (InterruptedException ignored) {}
         }
+        try { if (part.exists()) part.delete(); } catch (Throwable ignored) {}
+        return false;
     }
 
     private static String host(String url) {
