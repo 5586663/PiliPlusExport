@@ -146,30 +146,35 @@ public class UpExporter {
             vRoot.mkdirs();
             CommentSaver.writeFile(new File(vRoot, "000_视频总表.md"), MdWriter2.videoList(up, videos));
 
+            final int vTotal = videos.size();
             for (int i = 0; i < videos.size(); i++) {
+                final int vIdx = i + 1;
                 VideoItem v = videos.get(i);
-                File vdir = new File(vRoot, NameUtil.indexed(i + 1, v.title));
+                final String vTitle = v.title;
+                File vdir = new File(vRoot, NameUtil.indexed(vIdx, vTitle));
                 if (!vdir.exists()) vdir.mkdirs();
-                cb.on("视频", i + 1, videos.size(), v.title);
+                cb.on("视频", vIdx, vTotal, vTitle);
 
                 try {
                     CommentSaver.writeFile(new File(vdir, "视频信息.md"), MdWriter2.videoInfo(up, v));
 
                     if (opt.downloadVideo) {
-                        cb.on("下载视频", i + 1, videos.size(), v.title);
+                        cb.on("下载视频", vIdx, vTotal, vTitle);
                         VideoDownloader.Result dr = VideoDownloader.download(v, vdir, (stage, got, total) -> {
-                            String det = total > 0 ? (got / 1048576) + "MB/" + (total / 1048576) + "MB" : (got / 1048576) + "MB";
-                            cb.on("下载视频 · " + stage, i + 1, videos.size(), v.title + "\n" + det);
+                            String det = total > 0
+                                    ? (got / 1048576) + "MB/" + (total / 1048576) + "MB"
+                                    : (got / 1048576) + "MB";
+                            cb.on("下载视频 · " + stage, vIdx, vTotal, vTitle + "\n" + det);
                         });
                         if (!dr.ok) {
-                            cb.on("视频下载失败", i + 1, videos.size(), v.title + "\n" + dr.error);
+                            cb.on("视频下载失败", vIdx, vTotal, vTitle + "\n" + dr.error);
                         }
                     }
 
                     if (opt.videoComments) {
                         List<Reply> mains = DynExporter.fetchAll(v.aid, ReplyApi2.TYPE_VIDEO);
                         File cdir = new File(vdir, "视频评论");
-                        String header = "# " + v.title + " · 视频评论\n\n"
+                        String header = "# " + vTitle + " · 视频评论\n\n"
                                 + "> 视频：https://www.bilibili.com/video/" + v.bvid + "\n"
                                 + "> UP主：" + up.name + "（UID：" + up.mid + "）\n"
                                 + (v.pubTime.isEmpty() ? "" : ("> 发布：" + v.pubTime + "\n"))
@@ -179,7 +184,7 @@ public class UpExporter {
                     }
                 } catch (Throwable t) {
                     vFail++;
-                    cb.on("视频失败", i + 1, videos.size(), v.title + "\n" + t.getMessage());
+                    cb.on("视频失败", vIdx, vTotal, vTitle + "\n" + t.getMessage());
                 }
             }
         }
@@ -190,11 +195,14 @@ public class UpExporter {
             dRoot.mkdirs();
             CommentSaver.writeFile(new File(dRoot, "000_动态总表.md"), MdWriter2.dynList(up, dyns));
 
+            final int dTotal = dyns.size();
             for (int i = 0; i < dyns.size(); i++) {
+                final int dIdx = i + 1;
                 DynItem d = dyns.get(i);
-                File ddir = new File(dRoot, NameUtil.indexed(i + 1, DynExporter.dynTitle(d)));
+                final String dTitle = DynExporter.dynTitle(d);
+                File ddir = new File(dRoot, NameUtil.indexed(dIdx, dTitle));
                 if (!ddir.exists()) ddir.mkdirs();
-                cb.on("动态", i + 1, dyns.size(), DynExporter.dynTitle(d));
+                cb.on("动态", dIdx, dTotal, dTitle);
                 try {
                     CommentSaver.writeFile(new File(ddir, "动态.md"), MdWriter2.dynDetail(d));
 
@@ -219,7 +227,7 @@ public class UpExporter {
                     }
                 } catch (Throwable t) {
                     dFail++;
-                    cb.on("动态失败", i + 1, dyns.size(), t.getMessage());
+                    cb.on("动态失败", dIdx, dTotal, t.getMessage());
                 }
             }
         }
