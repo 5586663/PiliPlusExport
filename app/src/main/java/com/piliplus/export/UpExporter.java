@@ -138,7 +138,6 @@ public class UpExporter {
         CommentSaver.writeFile(new File(dir, "00_总览.md"), MdWriter2.upOverview(up, videos, dyns));
 
         long totalComments = 0;
-        long videoBytes = 0;
         int vFail = 0, dFail = 0;
 
         // ---------- 4. 视频 ----------
@@ -164,13 +163,11 @@ public class UpExporter {
                         });
                         if (!dr.ok) {
                             cb.on("视频下载失败", i + 1, videos.size(), v.title + "\n" + dr.error);
-                        } else {
-                            videoBytes += dr.bytes;
                         }
                     }
 
                     if (opt.videoComments) {
-                        List<Reply> mains = DynExporter.fetchAll(v.aid, ReplyApi2.TYPE_VIDEO, cb, i + 1, videos.size());
+                        List<Reply> mains = DynExporter.fetchAll(v.aid, ReplyApi2.TYPE_VIDEO);
                         File cdir = new File(vdir, "视频评论");
                         String header = "# " + v.title + " · 视频评论\n\n"
                                 + "> 视频：https://www.bilibili.com/video/" + v.bvid + "\n"
@@ -211,7 +208,7 @@ public class UpExporter {
                     }
 
                     if (opt.dynComments && d.oid != 0) {
-                        List<Reply> mains = DynExporter.fetchAll(d.oid, ReplyApi2.TYPE_DYNAMIC, cb, i + 1, dyns.size());
+                        List<Reply> mains = DynExporter.fetchAll(d.oid, ReplyApi2.TYPE_DYNAMIC);
                         File cdir = new File(ddir, "动态评论");
                         String header = "# 动态评论\n\n"
                                 + "> 动态：https://t.bilibili.com/" + d.dynIdStr + "\n"
@@ -227,7 +224,7 @@ public class UpExporter {
             }
         }
 
-        cb.on("统计", 0, 0, "整理结果");
+        cb.on("统计", 0, 0, "整理完成" + (vFail + dFail > 0 ? ("，失败 " + (vFail + dFail) + " 项") : ""));
         long bytes = dirSize(dir);
         cb.done(dir.getAbsolutePath(), videos.size(), dyns.size(), totalComments, bytes);
     }
