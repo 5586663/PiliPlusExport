@@ -42,7 +42,7 @@ public final class DynExporter {
         public int failed;
     }
 
-    public static Result run(java.io.File dynRoot, List<DynItem> dyns,
+    public static Result run(File dynRoot, List<DynItem> dyns,
                              boolean withComments, boolean withPics, Progress cb) throws Exception {
         Result r = new Result();
         if (!dynRoot.exists() && !dynRoot.mkdirs()) throw new Exception("无法创建目录：" + dynRoot);
@@ -57,7 +57,6 @@ public final class DynExporter {
                 CommentSaver.writeFile(new File(dir, "动态.md"), MdWriter2.dynDetail(d));
                 r.dynFolders++;
 
-                // 动态自身图片
                 if (withPics && !d.images.isEmpty()) {
                     File picDir = new File(dir, "图片");
                     int pn = 0;
@@ -67,9 +66,8 @@ public final class DynExporter {
                     }
                 }
 
-                // 动态评论
                 if (withComments && d.oid != 0) {
-                    List<Reply> mains = fetchAll(d.oid, ReplyApi2.TYPE_DYNAMIC, cb, i + 1, dyns.size());
+                    List<Reply> mains = fetchAll(d.oid, ReplyApi2.TYPE_DYNAMIC);
                     File cdir = new File(dir, "动态评论");
                     int[] st = CommentSaver.save(cdir, null, mains, withPics, null);
                     r.comments += st[0];
@@ -84,7 +82,8 @@ public final class DynExporter {
     }
 
     // ==================================================================
-    static List<Reply> fetchAll(long oid, int type, Progress cb, int cur, int total) {
+    /** 拉一条 oid 下的全部主评论 + 展开楼中楼。type: TYPE_VIDEO / TYPE_DYNAMIC */
+    static List<Reply> fetchAll(long oid, int type) {
         List<Reply> mains = new ArrayList<>();
         Set<Long> seen = new HashSet<>();
         long cursor = 0;
