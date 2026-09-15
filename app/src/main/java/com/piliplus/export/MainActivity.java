@@ -22,7 +22,7 @@ public class MainActivity extends Activity {
             "4. 界面右侧出现两个按钮：导出评论 / 导出UP主\n\n" +
             "【功能一：导出评论】\n" +
             "复制视频 BV 号到剪贴板，或点按钮手输。\n" +
-            "输出 /sdcard/Download/<视频标题>_评论.md\n" +
+            "输出 /storage/emulated/0/Download/<视频标题>_评论.md\n" +
             "含主评论 + 全部楼中楼。\n\n" +
             "【功能二：导出UP主】\n" +
             "输入 UID 或粘贴主页链接，然后选模式：\n" +
@@ -30,7 +30,7 @@ public class MainActivity extends Activity {
             "  · 仅动态：全部动态正文 + 发布时间\n" +
             "  · 视频 + 动态：两者都导\n" +
             "可勾选是否拉视频评论（不勾则 1~3 分钟完成）。\n\n" +
-            "输出目录：/sdcard/Download/PiliPlus_导出/<UP名>/\n" +
+            "输出目录：/storage/emulated/0/Download/PiliPlus_导出/<UP名>/\n" +
             "    00_总览.md      UP信息 + 汇总 + 视频清单 + 动态清单\n" +
             "    动态.md         全部动态正文（含发布时间）\n" +
             "    视频/<标题>.md  每个视频的完整评论区\n\n" +
