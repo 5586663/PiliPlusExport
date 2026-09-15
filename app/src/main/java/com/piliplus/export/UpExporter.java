@@ -3,8 +3,6 @@ package com.piliplus.export;
 import android.content.Context;
 
 import java.io.File;
-import java.io.FileOutputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -13,18 +11,27 @@ import java.util.Set;
 /**
  * UP主全量导出编排。
  *
- * 三种模式（互相独立，也可一起）：
- *   MODE_VIDEOS —— 只导投稿视频列表 + 每个视频的全部评论
- *   MODE_DYNS   —— 只导动态（含发布时间）
- *   MODE_ALL    —— 两者都导
- *
- * 动态走 HTTP web 接口（DynApi），因为 gRPC 的 OpusSpaceFlow 响应中无发布时间字段。
+ * 目录结构：
+ *   <root>/<UP名>/
+ *     00_总览.md
+ *     视频/
+ *       000_视频总表.md
+ *       <序号>_<标题>/
+ *         视频信息.md
+ *         视频.mp4                 (可选)
+ *         视频评论/
+ *           评论.md
+ *           评论图片/评论N.jpg
+ *     动态/
+ *       000_动态总表.md
+ *       <序号>_<标题>/
+ *         动态.md
+ *         图片/
+ *         动态评论/
+ *           评论.md
+ *           评论图片/
  */
 public class UpExporter {
-
-    public static final int MODE_VIDEOS = 1;
-    public static final int MODE_DYNS = 2;
-    public static final int MODE_ALL = 3;
 
     public interface Progress {
         void on(String stage, int cur, int total, String detail);
@@ -32,9 +39,18 @@ public class UpExporter {
         void error(String msg);
     }
 
+    public static class Options {
+        public boolean videos = true;
+        public boolean videoComments = true;
+        public boolean dyns = true;
+        public boolean dynComments = true;
+        public boolean commentPics = true;
+        public boolean downloadVideo = false;
+        public boolean dynPics = true;
+    }
+
     private static final long THROTTLE_MS = 70;
     private static final int NO_NEW_LIMIT = 12;
-    private static final int SUB_STALL_LIMIT = 2;
 
     private final Context ctx;
     private final Progress cb;
@@ -44,14 +60,10 @@ public class UpExporter {
         this.cb = cb;
     }
 
-    /**
-     * @param mode            MODE_VIDEOS / MODE_DYNS / MODE_ALL
-     * @param withComments    仅 MODE_VIDEOS/MODE_ALL 有效：是否拉每个视频的全部评论
-     */
-    public void run(long mid, MdWriter.Style style, int mode, boolean withComments) {
+    public void run(long mid, Options opt) {
         new Thread(() -> {
             try {
-                doRun(mid, style, mode, withComments);
+                doRun(mid, opt);
             } catch (Throwable t) {
                 cb.error(t.getClass().getSimpleName() + ": " + t.getMessage());
             }
@@ -59,26 +71,20 @@ public class UpExporter {
     }
 
     // ==================================================================
-    private void doRun(long mid, MdWriter.Style style, int mode, boolean withComments) throws Exception {
+    private void doRun(long mid, Options opt) throws Exception {
         cb.on("获取 UP 信息", 0, 0, String.valueOf(mid));
         SpaceApi.UpInfo up = SpaceApi.spaceInfo(mid);
         if (up.name == null || up.name.isEmpty()) up.name = "UID" + mid;
 
         File root = exportRoot();
-        File dir = new File(root, MdWriter.safeName(up.name));
+        File dir = new File(root, NameUtil.safe(up.name));
         if (!dir.exists() && !dir.mkdirs()) throw new Exception("无法创建目录：" + dir);
-        File vdir = new File(dir, "视频");
-        if (!vdir.exists()) vdir.mkdirs();
-
-        boolean wantVideos = (mode == MODE_VIDEOS || mode == MODE_ALL);
-        boolean wantDyns = (mode == MODE_DYNS || mode == MODE_ALL);
 
         // ---------- 1. 视频列表 ----------
         List<VideoItem> videos = new ArrayList<>();
-        if (wantVideos) {
-            Set<Long> vseen = new HashSet<>();
-            int pn = 1;
-            int vNoNew = 0;
+        if (opt.videos) {
+            Set<Long> seen = new HashSet<>();
+            int pn = 1, noNew = 0;
             for (int pg = 0; pg < 5000; pg++) {
                 if (pg > 0) sleep(THROTTLE_MS);
                 SpaceApi.VideoPage page;
@@ -89,23 +95,21 @@ public class UpExporter {
                     break;
                 }
                 int add = 0;
-                for (VideoItem v : page.items) {
-                    if (v.aid != 0 && vseen.add(v.aid)) { videos.add(v); add++; }
-                }
+                for (VideoItem v : page.items) if (v.aid != 0 && seen.add(v.aid)) { videos.add(v); add++; }
                 cb.on("视频列表", videos.size(), page.total, page.items.isEmpty() ? "本页空" : "继续");
-                vNoNew = add > 0 ? 0 : vNoNew + 1;
-                if (vNoNew >= NO_NEW_LIMIT) break;
+                noNew = add > 0 ? 0 : noNew + 1;
+                if (noNew >= NO_NEW_LIMIT) break;
                 if (!page.hasNext || page.next <= 0 || page.next == pn) break;
                 pn = page.next;
             }
         }
 
-        // ---------- 2. 动态列表（HTTP + WBI，含发布时间） ----------
+        // ---------- 2. 动态列表 ----------
         List<DynItem> dyns = new ArrayList<>();
-        if (wantDyns) {
-            Set<String> dseen = new HashSet<>();
+        if (opt.dyns) {
+            Set<String> seen = new HashSet<>();
             String offset = null;
-            int dNoNew = 0;
+            int noNew = 0;
             for (int pg = 0; pg < 2000; pg++) {
                 if (pg > 0) sleep(THROTTLE_MS);
                 DynApi.Page page;
@@ -118,11 +122,11 @@ public class UpExporter {
                 int add = 0;
                 for (DynItem d : page.items) {
                     String key = d.dynIdStr.isEmpty() ? String.valueOf(d.oid) : d.dynIdStr;
-                    if (!key.isEmpty() && dseen.add(key)) { dyns.add(d); add++; }
+                    if (!key.isEmpty() && seen.add(key)) { dyns.add(d); add++; }
                 }
                 cb.on("动态列表", dyns.size(), 0, page.items.isEmpty() ? "本页空" : "继续");
-                dNoNew = add > 0 ? 0 : dNoNew + 1;
-                if (dNoNew >= NO_NEW_LIMIT) break;
+                noNew = add > 0 ? 0 : noNew + 1;
+                if (noNew >= NO_NEW_LIMIT) break;
                 if (!page.hasMore) break;
                 if (page.offset == null || page.offset.isEmpty() || page.offset.equals(offset)) break;
                 offset = page.offset;
@@ -131,27 +135,94 @@ public class UpExporter {
 
         // ---------- 3. 总览 ----------
         cb.on("写入总览", 0, 0, up.name);
-        writeFile(new File(dir, "00_总览.md"), MdWriter2.upOverview(up, videos, dyns));
+        CommentSaver.writeFile(new File(dir, "00_总览.md"), MdWriter2.upOverview(up, videos, dyns));
 
-        // ---------- 4. 动态 ----------
-        if (wantDyns && !dyns.isEmpty()) {
-            cb.on("写入动态", 0, 0, dyns.size() + " 条");
-            writeFile(new File(dir, "动态.md"), MdWriter2.dyns(up, dyns));
-        }
-
-        // ---------- 5. 逐视频评论 ----------
         long totalComments = 0;
-        if (wantVideos && withComments) {
+        long videoBytes = 0;
+        int vFail = 0, dFail = 0;
+
+        // ---------- 4. 视频 ----------
+        if (opt.videos && !videos.isEmpty()) {
+            File vRoot = new File(dir, "视频");
+            vRoot.mkdirs();
+            CommentSaver.writeFile(new File(vRoot, "000_视频总表.md"), MdWriter2.videoList(up, videos));
+
             for (int i = 0; i < videos.size(); i++) {
                 VideoItem v = videos.get(i);
-                cb.on("视频评论", i + 1, videos.size(), v.title);
+                File vdir = new File(vRoot, NameUtil.indexed(i + 1, v.title));
+                if (!vdir.exists()) vdir.mkdirs();
+                cb.on("视频", i + 1, videos.size(), v.title);
+
                 try {
-                    long[] stat = new long[2];
-                    String md = collectVideo(up, v, style, stat);
-                    totalComments += stat[0] + stat[1];
-                    writeFile(new File(vdir, MdWriter.safeName(v.title) + ".md"), md);
-                } catch (Exception e) {
-                    cb.on("视频评论", i + 1, videos.size(), "失败：" + v.title + " " + e.getMessage());
+                    CommentSaver.writeFile(new File(vdir, "视频信息.md"), MdWriter2.videoInfo(up, v));
+
+                    if (opt.downloadVideo) {
+                        cb.on("下载视频", i + 1, videos.size(), v.title);
+                        VideoDownloader.Result dr = VideoDownloader.download(v, vdir, (stage, got, total) -> {
+                            String det = total > 0 ? (got / 1048576) + "MB/" + (total / 1048576) + "MB" : (got / 1048576) + "MB";
+                            cb.on("下载视频 · " + stage, i + 1, videos.size(), v.title + "\n" + det);
+                        });
+                        if (!dr.ok) {
+                            cb.on("视频下载失败", i + 1, videos.size(), v.title + "\n" + dr.error);
+                        } else {
+                            videoBytes += dr.bytes;
+                        }
+                    }
+
+                    if (opt.videoComments) {
+                        List<Reply> mains = DynExporter.fetchAll(v.aid, ReplyApi2.TYPE_VIDEO, cb, i + 1, videos.size());
+                        File cdir = new File(vdir, "视频评论");
+                        String header = "# " + v.title + " · 视频评论\n\n"
+                                + "> 视频：https://www.bilibili.com/video/" + v.bvid + "\n"
+                                + "> UP主：" + up.name + "（UID：" + up.mid + "）\n"
+                                + (v.pubTime.isEmpty() ? "" : ("> 发布：" + v.pubTime + "\n"))
+                                + "> 导出：" + MdWriter2.now() + "\n";
+                        int[] st = CommentSaver.save(cdir, header, mains, opt.commentPics, null);
+                        totalComments += st[0];
+                    }
+                } catch (Throwable t) {
+                    vFail++;
+                    cb.on("视频失败", i + 1, videos.size(), v.title + "\n" + t.getMessage());
+                }
+            }
+        }
+
+        // ---------- 5. 动态 ----------
+        if (opt.dyns && !dyns.isEmpty()) {
+            File dRoot = new File(dir, "动态");
+            dRoot.mkdirs();
+            CommentSaver.writeFile(new File(dRoot, "000_动态总表.md"), MdWriter2.dynList(up, dyns));
+
+            for (int i = 0; i < dyns.size(); i++) {
+                DynItem d = dyns.get(i);
+                File ddir = new File(dRoot, NameUtil.indexed(i + 1, DynExporter.dynTitle(d)));
+                if (!ddir.exists()) ddir.mkdirs();
+                cb.on("动态", i + 1, dyns.size(), DynExporter.dynTitle(d));
+                try {
+                    CommentSaver.writeFile(new File(ddir, "动态.md"), MdWriter2.dynDetail(d));
+
+                    if (opt.dynPics && !d.images.isEmpty()) {
+                        File picDir = new File(ddir, "图片");
+                        int pn = 0;
+                        for (String url : d.images) {
+                            String n = "动态图" + (++pn);
+                            HttpDownloader.downloadSmall(url, new File(picDir, n + NameUtil.imgExt(url)));
+                        }
+                    }
+
+                    if (opt.dynComments && d.oid != 0) {
+                        List<Reply> mains = DynExporter.fetchAll(d.oid, ReplyApi2.TYPE_DYNAMIC, cb, i + 1, dyns.size());
+                        File cdir = new File(ddir, "动态评论");
+                        String header = "# 动态评论\n\n"
+                                + "> 动态：https://t.bilibili.com/" + d.dynIdStr + "\n"
+                                + "> 时间：" + (d.pubTs > 0 ? MdWriter2.fmt(d.pubTs) : d.pubTimeText) + "\n"
+                                + "> 导出：" + MdWriter2.now() + "\n";
+                        int[] st = CommentSaver.save(cdir, header, mains, opt.commentPics, null);
+                        totalComments += st[0];
+                    }
+                } catch (Throwable t) {
+                    dFail++;
+                    cb.on("动态失败", i + 1, dyns.size(), t.getMessage());
                 }
             }
         }
@@ -159,73 +230,6 @@ public class UpExporter {
         cb.on("统计", 0, 0, "整理结果");
         long bytes = dirSize(dir);
         cb.done(dir.getAbsolutePath(), videos.size(), dyns.size(), totalComments, bytes);
-    }
-
-    // ==================================================================
-    private String collectVideo(SpaceApi.UpInfo up, VideoItem v, MdWriter.Style style, long[] statOut) throws Exception {
-        List<Reply> mains = new ArrayList<>();
-        Set<Long> seen = new HashSet<>();
-        long cursor = 0;
-        String offset = null;
-        int noNew = 0;
-        long apiTotal = 0;
-
-        for (int pg = 0; pg < 2000; pg++) {
-            if (pg > 0) sleep(THROTTLE_MS);
-            ReplyApi2.Page p = ReplyApi2.mainList(v.aid, ReplyApi2.TYPE_VIDEO, cursor, 3, offset);
-            if (p.totalCount > 0) apiTotal = p.totalCount;
-            int add = 0;
-            for (Reply r : p.replies) if (seen.add(r.id)) { mains.add(r); add++; }
-            noNew = add > 0 ? 0 : noNew + 1;
-            if (noNew >= NO_NEW_LIMIT || p.replies.isEmpty()) break;
-            if (p.nextCursor != 0) cursor = p.nextCursor;
-            if (p.nextOffset != null) offset = p.nextOffset;
-            if (p.isEnd && add == 0) break;
-        }
-
-        int subTotal = 0;
-        Set<Long> subSeen = new HashSet<>();
-        for (Reply m : mains) {
-            for (Reply s : m.subs) subSeen.add(s.id);
-            if (m.count > m.subs.size()) {
-                sleep(THROTTLE_MS);
-                List<Reply> extra = fetchSubs(v.aid, ReplyApi2.TYPE_VIDEO, m.id);
-                for (Reply s : extra) if (s.id != 0 && subSeen.add(s.id)) m.subs.add(s);
-            }
-            subTotal = subSeen.size();
-        }
-
-        statOut[0] = mains.size();
-        statOut[1] = subTotal;
-        return MdWriter2.videoComments(up, v, mains, style, subTotal, apiTotal);
-    }
-
-    private List<Reply> fetchSubs(long oid, int type, long root) {
-        List<Reply> out = new ArrayList<>();
-        Set<Long> ids = new HashSet<>();
-        long cursor = 0;
-        String offset = null;
-        String prevKey = "";
-        int stall = 0;
-        for (int pg = 0; pg < 500; pg++) {
-            if (pg > 0) sleep(30);
-            ReplyApi2.SubPage sp;
-            try {
-                sp = ReplyApi2.detailList(oid, type, root, cursor, 2, offset);
-            } catch (Exception e) { break; }
-            if (sp.replies.isEmpty()) break;
-            StringBuilder key = new StringBuilder();
-            for (Reply r : sp.replies) key.append(r.id).append(',');
-            if (key.toString().equals(prevKey)) { if (++stall >= SUB_STALL_LIMIT) break; }
-            else { stall = 0; prevKey = key.toString(); }
-            int add = 0;
-            for (Reply r : sp.replies) if (r.id != 0 && ids.add(r.id)) { out.add(r); add++; }
-            if (add == 0 && stall > 0) break;
-            if (sp.replies.size() < 20) break;
-            if (sp.nextCursor != 0) cursor = sp.nextCursor;
-            if (sp.nextOffset != null) offset = sp.nextOffset;
-        }
-        return out;
     }
 
     // ==================================================================
@@ -237,12 +241,6 @@ public class UpExporter {
         File f = new File(ctx.getFilesDir(), "PiliPlus_导出");
         f.mkdirs();
         return f;
-    }
-
-    private static void writeFile(File f, String content) throws Exception {
-        try (FileOutputStream fos = new FileOutputStream(f)) {
-            fos.write(content.getBytes(StandardCharsets.UTF_8));
-        }
     }
 
     private static long dirSize(File d) {
