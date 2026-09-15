@@ -58,7 +58,9 @@ public final class ReplyApi2 {
             byte[] off = Proto.getB(pr, 1);
             if (off != null) p.nextOffset = new String(off, StandardCharsets.UTF_8);
         }
-        for (byte[] rb : Proto.getAllB(resp, 2)) {
+        java.util.List<byte[]> _raws = Proto.getAllB(resp, 2);
+        DebugDump.dumpReplies(_raws, "mainList type=" + type);
+        for (byte[] rb : _raws) {
             Reply r = Reply.parse(rb);
             if (r.valid()) p.replies.add(r);
         }
