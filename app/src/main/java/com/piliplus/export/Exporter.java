@@ -11,6 +11,8 @@ import java.util.List;
  *
  * 输出：/storage/emulated/0/Download/PiliPlus_导出/单视频/<标题>/
  *        视频信息.md
+ *        视频.xml                 （弹幕，与视频同名，播放器自动挂载）
+ *        弹幕.md
  *        视频评论/评论.md
  *        视频评论/评论图片/评论N.jpg
  */
@@ -27,6 +29,11 @@ public class Exporter {
 
     private final Context ctx;
     private final Progress cb;
+
+    /** 是否拉弹幕 */
+    public boolean danmaku = true;
+    /** 是否回填评论 IP 属地 */
+    public boolean ipBackfill = true;
 
     public Exporter(Context ctx, Progress cb) { this.ctx = ctx; this.cb = cb; }
 
@@ -48,6 +55,29 @@ public class Exporter {
                 CommentSaver.writeFile(new File(dir, "视频信息.md"),
                         "# " + v.title + "\n\n> 视频：https://www.bilibili.com/video/" + v.bvid
                         + "\n> 导出：" + MdWriter2.now() + "\n");
+
+                // ---- 弹幕 ----
+                if (danmaku) {
+                    try {
+                        long cid = PlayUrlApi.cidOf(v.bvid, v.aid);
+                        List<DanmakuApi.Item> dms = DanmakuApi.fetchAll(cid, v.duration,
+                                (seg, tot, got) -> cb.on("弹幕 " + seg + "/" + tot, got, 0));
+                        int dn = DanmakuWriter.write(dir, v.title, dms);
+                        cb.on("弹幕完成 " + dn + " 条", 0, 0);
+                    } catch (Throwable t) {
+                        cb.on("弹幕失败：" + t.getMessage(), 0, 0);
+                    }
+                }
+
+                // ---- 评论 IP 属地回填 ----
+                if (ipBackfill && !mains.isEmpty()) {
+                    try {
+                        int n = IpBackfill.apply(v.aid, ReplyApi2.TYPE_VIDEO, mains);
+                        cb.on("IP属地回填 " + n + " 条", 0, 0);
+                    } catch (Throwable t) {
+                        cb.on("IP属地失败：" + t.getMessage(), 0, 0);
+                    }
+                }
 
                 File cdir = new File(dir, "视频评论");
                 String header = "# " + v.title + " · 视频评论\n\n"
