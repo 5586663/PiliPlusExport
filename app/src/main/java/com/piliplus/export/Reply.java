@@ -3,7 +3,16 @@ package com.piliplus.export;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
-/** 单条评论 —— ReplyInfo 字段已核实: 1=replies 2=id 3=oid 4=type 5=mid 9=like 10=ctime 11=count 12=content 13=member 14=reply_control */
+/**
+ * 单条评论。
+ *
+ * ReplyInfo 字段（PiliPlus lib/grpc/bilibili/main/community/reply/v1.pbjson.dart 已核实）：
+ *   1=replies 2=id 3=oid 4=type 5=mid 9=like 10=ctime 11=count
+ *   12=content 13=member 14=reply_control 15=member_v2 16=track_info
+ * Content：1=message 9=pictures
+ * Picture：1=img_src 2=img_width 3=img_height 4=img_size
+ * ReplyControl：25=location
+ */
 public class Reply {
     public long id;
     public long oid;
@@ -13,7 +22,8 @@ public class Reply {
     public long count;      // 接口报告的楼中楼总数
     public String name = "";
     public String msg = "";
-    public String location = "";   // IP 属地 —— ReplyControl.location (字段 25)
+    public String location = "";                        // IP 属地
+    public java.util.List<String> pics = new java.util.ArrayList<>();   // 评论图片 URL
     public java.util.List<byte[]> rawSubs = new java.util.ArrayList<>();
     public java.util.List<Reply> subs = new java.util.ArrayList<>();
 
@@ -30,6 +40,13 @@ public class Reply {
         if (content != null) {
             String m = Proto.getS(content, 1);
             if (m != null) r.msg = m;
+            for (byte[] pb : Proto.getAllB(content, 9)) {
+                String src = Proto.getS(pb, 1);
+                if (src != null && !src.isEmpty()) {
+                    if (src.startsWith("//")) src = "https:" + src;
+                    r.pics.add(src);
+                }
+            }
         }
         byte[] member = Proto.getB(buf, 13);
         if (member != null) {
