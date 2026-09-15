@@ -34,6 +34,7 @@ public final class CommentSaver {
             throw new Exception("无法创建目录：" + commentDir);
         }
         File picDir = new File(commentDir, "评论图片");
+        if (downloadPics && !picDir.exists()) picDir.mkdirs();
 
         int picCount = 0;
         if (downloadPics) {
