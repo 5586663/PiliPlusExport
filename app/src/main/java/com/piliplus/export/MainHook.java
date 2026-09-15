@@ -34,11 +34,8 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 /**
  * Xposed 入口。
  *
- * 注入两个悬浮按钮：
- *   导出评论 —— 单个视频评论区
- *   导出UP主 —— 弹窗选模式（视频 / 动态 / 全部），可勾选是否含评论
- *
- * 作用域交给 LSPosed 管理器。模块跑在目标进程内，复用其 WebView Cookie。
+ * 每个 Activity 的 decorView 上分别注入两个悬浮按钮（用 tag 判重，
+ * 不依赖静态引用，避免旧 Activity 的残留引用导致新页面不注入）。
  */
 public class MainHook implements IXposedHookLoadPackage {
 
@@ -47,8 +44,8 @@ public class MainHook implements IXposedHookLoadPackage {
             Pattern.compile("space\\.bilibili\\.com/(\\d+)");
     private static final Pattern DIGITS = Pattern.compile("(\\d{2,})");
 
-    private static Button fabComment;
-    private static Button fabUp;
+    private static final String TAG_COMMENT = "pili_export_fab_comment";
+    private static final String TAG_UP = "pili_export_fab_up";
 
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lp) {
@@ -62,34 +59,37 @@ public class MainHook implements IXposedHookLoadPackage {
 
     // ------------------------------------------------------------------
     private static void injectFabs(Activity a) {
-        if (fabComment != null && fabComment.getParent() != null) return;
         try {
             View root = a.getWindow().getDecorView();
             if (!(root instanceof FrameLayout)) return;
             FrameLayout decor = (FrameLayout) root;
 
-            Button b1 = makeButton(a, "导出评论", "#FB7299");
-            FrameLayout.LayoutParams lp1 = new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT);
-            lp1.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
-            lp1.rightMargin = 8;
-            lp1.bottomMargin = dp(a, 96);
-            b1.setLayoutParams(lp1);
-            b1.setOnClickListener(v -> askVideoId(a));
-            decor.addView(b1);
-            fabComment = b1;
+            if (decor.findViewWithTag(TAG_COMMENT) == null) {
+                Button b1 = makeButton(a, "导出评论", "#FB7299");
+                b1.setTag(TAG_COMMENT);
+                FrameLayout.LayoutParams lp1 = new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT);
+                lp1.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
+                lp1.rightMargin = dp(a, 8);
+                lp1.bottomMargin = dp(a, 96);
+                b1.setLayoutParams(lp1);
+                b1.setOnClickListener(v -> askVideoId(a));
+                decor.addView(b1);
+            }
 
-            Button b2 = makeButton(a, "导出UP主", "#FF6699");
-            FrameLayout.LayoutParams lp2 = new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT);
-            lp2.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
-            lp2.rightMargin = 8;
-            b2.setLayoutParams(lp2);
-            b2.setOnClickListener(v -> askUpId(a));
-            decor.addView(b2);
-            fabUp = b2;
+            if (decor.findViewWithTag(TAG_UP) == null) {
+                Button b2 = makeButton(a, "导出UP主", "#FF6699");
+                b2.setTag(TAG_UP);
+                FrameLayout.LayoutParams lp2 = new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT);
+                lp2.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
+                lp2.rightMargin = dp(a, 8);
+                b2.setLayoutParams(lp2);
+                b2.setOnClickListener(v -> askUpId(a));
+                decor.addView(b2);
+            }
         } catch (Throwable ignored) {
         }
     }
@@ -113,8 +113,6 @@ public class MainHook implements IXposedHookLoadPackage {
         return (int) (v * c.getResources().getDisplayMetrics().density + 0.5f);
     }
 
-    // ==================================================================
-    // 单视频评论导出
     // ==================================================================
     private static void askVideoId(Activity a) {
         String fromClip = readClipBv(a);
@@ -195,8 +193,6 @@ public class MainHook implements IXposedHookLoadPackage {
         ex.run(videoId, MdWriter.Style.HEADING);
     }
 
-    // ==================================================================
-    // UP主导出（三模式）
     // ==================================================================
     private static void askUpId(Activity a) {
         long fromClip = readClipMid(a);
