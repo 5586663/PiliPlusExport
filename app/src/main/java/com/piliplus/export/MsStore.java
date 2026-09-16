@@ -112,7 +112,7 @@ public final class MsStore {
 
     private static String guessMime(String name) {
         String n = name.toLowerCase();
-        if (n.endsWith(".md") || n.endsWith(".txt")) return "text/plain";
+        if (n.endsWith(".md")) return "text/markdown"; if (n.endsWith(".txt")) return "text/plain";
         if (n.endsWith(".json")) return "application/json";
         if (n.endsWith(".xml")) return "application/xml";
         if (n.endsWith(".jpg") || n.endsWith(".jpeg")) return "image/jpeg";
