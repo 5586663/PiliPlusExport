@@ -6,7 +6,7 @@
       模块代码本身不做包名判断（见 MainHook），因此列表只是便利，不是硬限制。
     -->
     <string-array name="xposed_scope">
-        <item>android</item>
+        <item>com.android.providers.media.module</item>
         <item>tv.danmaku.bili</item>
         <item>com.bilibili.app.in</item>
         <item>com.example.piliplus</item>
