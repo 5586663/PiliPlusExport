@@ -57,7 +57,7 @@ public class Exporter {
                 for (Reply m : mains) sub += m.subs.size();
 
                 File root = exportRoot();
-                String upName = (v.ownerName != null && !v.ownerName.isEmpty()) ? v.ownerName : ("UID" + v.ownerMid); String upDirName = NameUtil.safe(upName + " " + v.ownerMid); File upDir = new File(root, upDirName); File dir = new File(upDir, NameUtil.safe(v.title));
+                String upName = (v.ownerName != null && !v.ownerName.isEmpty()) ? v.ownerName : "未知UP"; String upDirName = NameUtil.safe(v.ownerMid > 0 ? (upName + " " + v.ownerMid) : upName); File upDir = new File(root, upDirName); File dir = new File(upDir, NameUtil.safe(v.title));
                 if (!dir.exists() && !dir.mkdirs()) throw new Exception("无法创建目录：" + dir);
 
                 CommentSaver.writeFile(new File(dir, "视频信息.md"),
