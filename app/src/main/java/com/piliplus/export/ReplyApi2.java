@@ -78,7 +78,7 @@ public final class ReplyApi2 {
         try {
             int lc = 0;
             for (Reply rr : p.replies) if (rr.location != null && !rr.location.isEmpty()) lc++;
-            java.io.FileWriter fw = new java.io.FileWriter("/data/local/tmp/diag_sub.txt", true);
+            java.io.FileWriter fw = new java.io.FileWriter("/sdcard/diag_sub.txt", true);
             fw.write("root=" + root + " subs=" + p.replies.size() + " withLoc=" + lc + "\n");
             fw.close();
         } catch (Throwable t) {}
