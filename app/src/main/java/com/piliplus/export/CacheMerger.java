@@ -26,6 +26,7 @@ import java.util.List;
  *         <序号_标题>.xml
  *
  * 依赖 libffmpeg_core.so（arm64-v8a）。
+ * 若无 MANAGE_EXTERNAL_STORAGE：先落 App 私有目录，结束时用 MediaStore API 镜像到 Download。
  */
 public final class CacheMerger {
 
@@ -85,8 +86,21 @@ public final class CacheMerger {
             throw new Exception("未在 " + cacheRoot.getAbsolutePath() + " 找到可合并的缓存");
         }
 
-        // ---- 2. 输出根目录 ----
-        File root = exportRoot(ctx);
+        // ---- 2. 输出根目录（共享可写则直写，否则私有 + 结束时 MediaStore 发布） ----
+        boolean useMsPublish;
+        File root;
+        File shared = new File("/storage/emulated/0/Download/PiliPlus_导出/缓存合并");
+        if (writableDir(shared)) {
+            root = shared;
+            useMsPublish = false;
+        } else {
+            useMsPublish = true;
+            File ext = ctx.getExternalFilesDir(null);
+            root = (ext != null)
+                    ? new File(ext, "PiliPlus_导出/缓存合并")
+                    : new File(ctx.getFilesDir(), "PiliPlus_导出/缓存合并");
+            if (!root.exists()) root.mkdirs();
+        }
         r.outDir = root.getAbsolutePath();
         if (!root.exists() && !root.mkdirs()) throw new Exception("无法创建输出目录：" + root);
 
@@ -144,22 +158,28 @@ public final class CacheMerger {
             }
         }
 
+        // ---- 4. 发布到共享 Download ----
+        if (useMsPublish) {
+            try {
+                int n = MsStore.publishTree(ctx, root, "PiliPlus_导出/缓存合并");
+                cb.on("已用 MediaStore 发布到 Download", 0, 0, n + " 个文件");
+                r.outDir = "Download/PiliPlus_导出/缓存合并";
+            } catch (Throwable t) {
+                cb.on("MediaStore 发布失败", 0, 0, t.getMessage()
+                        + "（文件留在 " + root.getAbsolutePath() + "）");
+            }
+        }
+
         return r;
     }
 
     // ==================================================================
-    private static File exportRoot(Context ctx) {
-        File d = new File("/storage/emulated/0/Download/PiliPlus_导出/缓存合并");
-        if (d.isDirectory() || d.mkdirs()) return d;
-        File ext = ctx.getExternalFilesDir(null);
-        if (ext != null) {
-            File f = new File(ext, "PiliPlus_导出/缓存合并");
-            f.mkdirs();
-            return f;
-        }
-        File f = new File(ctx.getFilesDir(), "PiliPlus_导出/缓存合并");
-        f.mkdirs();
-        return f;
+    private static boolean writableDir(File d) {
+        if (!d.exists() && !d.mkdirs()) return false;
+        if (!d.isDirectory()) return false;
+        File probe = new File(d, ".wprobe_" + System.nanoTime());
+        try { if (probe.createNewFile()) { probe.delete(); return true; } } catch (Throwable ignored) {}
+        return false;
     }
 
     private static boolean copy(File src, File dst) {
