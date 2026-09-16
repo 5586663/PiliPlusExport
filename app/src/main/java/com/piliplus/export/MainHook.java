@@ -5,6 +5,10 @@ import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
+import android.os.Environment;
+import android.provider.Settings;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
@@ -56,6 +60,7 @@ public class MainHook implements IXposedHookLoadPackage {
                 "onResume", new XC_MethodHook() {
                     @Override protected void afterHookedMethod(MethodHookParam p) {
                         injectFabs((Activity) p.thisObject);
+                        ensurePerm((Activity) p.thisObject);
                     }
                 });
     }
@@ -438,5 +443,31 @@ public class MainHook implements IXposedHookLoadPackage {
     }
     private static void toast(Context c, String s) {
         Toast.makeText(c, s, Toast.LENGTH_SHORT).show();
+    }
+
+    private static volatile boolean permChecked = false;
+
+    /** 启动时检查「所有文件访问」；没有则弹一次，一键跳系统授权页。低版本无此 API 直接跳过。 */
+    private static void ensurePerm(Activity a) {
+        if (permChecked) return;
+        try {
+            if (Environment.isExternalStorageManager()) { permChecked = true; return; }
+        } catch (Throwable t) { return; }
+        permChecked = true;
+        try {
+            new AlertDialog.Builder(a)
+                .setTitle("建议授予「所有文件访问」")
+                .setMessage("导出默认写入 Download。未授予时也能用，但文件会存到 App 私有目录（Android/data/…）。\n\n现在去授予？")
+                .setPositiveButton("去授权", (d, w) -> {
+                    try {
+                        a.startActivity(new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                                Uri.parse("package:" + a.getPackageName())));
+                    } catch (Throwable t) {
+                        try { a.startActivity(new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)); } catch (Throwable ignored) {}
+                    }
+                })
+                .setNegativeButton("暂不", null)
+                .show();
+        } catch (Throwable ignored) {}
     }
 }
