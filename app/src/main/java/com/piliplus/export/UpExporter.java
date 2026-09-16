@@ -32,6 +32,8 @@ import java.util.Set;
  *         动态评论/
  *           评论.md
  *           评论图片/
+ *
+ * 若无 MANAGE_EXTERNAL_STORAGE：先落 App 私有目录，结束时用 MediaStore API 镜像到 Download。
  */
 public class UpExporter {
 
@@ -60,6 +62,9 @@ public class UpExporter {
 
     private final Context ctx;
     private final Progress cb;
+
+    /** true 表示输出落在 App 私有目录，导出结束需用 MediaStore 镜像到 Download。 */
+    private boolean useMsPublish = false;
 
     public UpExporter(Context ctx, Progress cb) {
         this.ctx = ctx;
@@ -266,18 +271,35 @@ public class UpExporter {
         String stat = "评论 " + totalComments + " 条｜弹幕 " + totalDanmaku + " 条｜IP属地 " + ipFilled + " 条"
                 + (vFail + dFail > 0 ? ("｜失败 " + (vFail + dFail) + " 项") : "");
         cb.on("统计", 0, 0, stat);
+
+        // ---------- 6. 发布到共享 Download ----------
+        String outPath = dir.getAbsolutePath();
+        if (useMsPublish) {
+            String relBase = "PiliPlus_导出/" + NameUtil.safe(up.name);
+            try {
+                int n = MsStore.publishTree(ctx, dir, relBase);
+                cb.on("已用 MediaStore 发布到 Download", 0, 0, n + " 个文件");
+                outPath = "Download/" + relBase;
+            } catch (Throwable t) {
+                cb.on("MediaStore 发布失败", 0, 0, t.getMessage()
+                        + "（文件留在 " + dir.getAbsolutePath() + "）");
+            }
+        }
+
         long bytes = dirSize(dir);
-        cb.done(dir.getAbsolutePath(), videos.size(), dyns.size(), totalComments, bytes);
+        cb.done(outPath, videos.size(), dyns.size(), totalComments, bytes);
     }
 
     // ==================================================================
     private File exportRoot() {
         File d = new File("/storage/emulated/0/Download/PiliPlus_导出");
-        if (writableDir(d)) return d;
+        if (writableDir(d)) { useMsPublish = false; return d; }
+        useMsPublish = true;
         File ext = ctx.getExternalFilesDir(null);
-        if (ext != null) { File f = new File(ext, "PiliPlus_导出"); if (writableDir(f)) return f; }
-        File f = new File(ctx.getFilesDir(), "PiliPlus_导出");
-        writableDir(f);
+        File f = (ext != null)
+                ? new File(ext, "PiliPlus_导出")
+                : new File(ctx.getFilesDir(), "PiliPlus_导出");
+        if (!f.exists()) f.mkdirs();
         return f;
     }
 
