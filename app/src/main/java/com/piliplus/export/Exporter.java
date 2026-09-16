@@ -57,7 +57,7 @@ public class Exporter {
                 for (Reply m : mains) sub += m.subs.size();
 
                 File root = exportRoot();
-                File dir = new File(root, NameUtil.safe(v.title));
+                String upName = (v.ownerName != null && !v.ownerName.isEmpty()) ? v.ownerName : ("UID" + v.ownerMid); String upDirName = NameUtil.safe(upName + " " + v.ownerMid); File upDir = new File(root, upDirName); File dir = new File(upDir, NameUtil.safe(v.title));
                 if (!dir.exists() && !dir.mkdirs()) throw new Exception("无法创建目录：" + dir);
 
                 CommentSaver.writeFile(new File(dir, "视频信息.md"),
@@ -120,7 +120,7 @@ public class Exporter {
                 // ---- 发布到共享 Download ----
                 String outPath = cdir.getAbsolutePath();
                 if (useMsPublish) {
-                    String relBase = "PiliPlus_导出/单视频/" + NameUtil.safe(v.title);
+                    String relBase = "PiliPlus_导出/单视频/" + upDirName + "/" + NameUtil.safe(v.title);
                     try {
                         int n = MsStore.publishTree(ctx, dir, relBase);
                         cb.on("已用 MediaStore 发布到 Download：" + n + " 个文件", 0, 0);
