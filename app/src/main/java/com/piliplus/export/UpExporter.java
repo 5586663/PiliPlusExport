@@ -273,12 +273,20 @@ public class UpExporter {
     // ==================================================================
     private File exportRoot() {
         File d = new File("/storage/emulated/0/Download/PiliPlus_导出");
-        if (d.isDirectory() || d.mkdirs()) return d;
+        if (writableDir(d)) return d;
         File ext = ctx.getExternalFilesDir(null);
-        if (ext != null) { File f = new File(ext, "PiliPlus_导出"); f.mkdirs(); return f; }
+        if (ext != null) { File f = new File(ext, "PiliPlus_导出"); if (writableDir(f)) return f; }
         File f = new File(ctx.getFilesDir(), "PiliPlus_导出");
-        f.mkdirs();
+        writableDir(f);
         return f;
+    }
+
+    private static boolean writableDir(File d) {
+        if (!d.exists() && !d.mkdirs()) return false;
+        if (!d.isDirectory()) return false;
+        File probe = new File(d, ".wprobe_" + System.nanoTime());
+        try { if (probe.createNewFile()) { probe.delete(); return true; } } catch (Throwable ignored) {}
+        return false;
     }
 
     private static long dirSize(File d) {
