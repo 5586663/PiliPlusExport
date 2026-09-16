@@ -1,3 +1,4 @@
+// v3 retry-open
 package com.piliplus.export;
 
 import android.content.ContentResolver;
@@ -97,17 +98,32 @@ public final class MsStore {
 
         Uri uri = cr.insert(MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), cv);
         if (uri == null) throw new Exception("MediaStore insert 失败：" + relPath + name);
-        try (InputStream is = new FileInputStream(src);
-             OutputStream os = cr.openOutputStream(uri)) {
-            if (os == null) throw new Exception("openOutputStream 失败：" + uri);
+        OutputStream os = null;
+        for (int attempt = 0; attempt < 6; attempt++) {
+            try {
+                os = cr.openOutputStream(uri);
+                if (os != null) break;
+            } catch (Throwable t) {
+                if (attempt == 5) throw t;
+                sleepMs(150L * (attempt + 1));
+            }
+        }
+        if (os == null) throw new Exception("openOutputStream 失败：" + uri);
+        try (InputStream is = new FileInputStream(src)) {
             byte[] buf = new byte[65536];
             int r;
             while ((r = is.read(buf)) > 0) os.write(buf, 0, r);
             os.flush();
+        } finally {
+            try { os.close(); } catch (Throwable ig) {}
         }
         ContentValues done = new ContentValues();
         done.put(MediaStore.Downloads.IS_PENDING, 0);
         cr.update(uri, done, null, null);
+    }
+
+    private static void sleepMs(long ms) {
+        try { Thread.sleep(ms); } catch (InterruptedException ignored) {}
     }
 
     private static String guessMime(String name) {
