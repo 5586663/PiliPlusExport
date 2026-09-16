@@ -182,7 +182,7 @@ public class Exporter {
      */
     private File exportRoot() {
         File shared = new File("/storage/emulated/0/Download/PiliPlus_导出/单视频");
-        if (writableDir(shared)) { useMsPublish = false; return shared; }
+        if (android.os.Build.VERSION.SDK_INT < 29 && writableDir(shared)) { useMsPublish = false; return shared; }
         useMsPublish = true;
         File ext = ctx.getExternalFilesDir(null);
         File f = (ext != null)
