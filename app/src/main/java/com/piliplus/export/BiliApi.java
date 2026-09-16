@@ -8,8 +8,6 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.LinkedHashMap;
 import java.util.zip.GZIPInputStream;
 
 /**
@@ -32,6 +30,7 @@ public class BiliApi {
 
     /** 由 Hook 注入：从 PiliPlus 进程内取到的 cookie 字符串 */
     public static volatile String COOKIE = "";
+    public static volatile String ACCESS_KEY = "";
 
     public interface Log { void on(String s); }
     private static Log log = s -> {};
@@ -113,7 +112,7 @@ public class BiliApi {
 
     public static Video videoInfo(String id) throws Exception {
         String q = id.startsWith("BV") ? "?bvid=" + id : "?aid=" + id.replace("av", "");
-        String body = viewJson(q);
+        String body = httpGet("https://api.bilibili.com/x/web-interface/view" + q);
         Video v = new Video();
         v.aid = jLong(body, "aid");
         v.bvid = jStr(body, "bvid");
@@ -154,6 +153,7 @@ public class BiliApi {
         c.setRequestProperty("platform", "android");
         c.setRequestProperty("mobi_app", "android");
         c.setRequestProperty("buvid", "XY00000000000000000000000000000000000");
+        GrpcHeaders.apply(c, ACCESS_KEY);
         if (COOKIE != null && !COOKIE.isEmpty()) c.setRequestProperty("cookie", COOKIE);
 
         try (OutputStream os = c.getOutputStream()) { os.write(framed.toByteArray()); }
@@ -190,8 +190,9 @@ public class BiliApi {
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         c.setConnectTimeout(15000);
         c.setReadTimeout(20000);
-        c.setRequestProperty("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+        c.setRequestProperty("User-Agent", "Mozilla/5.0");
         c.setRequestProperty("Referer", "https://www.bilibili.com/");
+        GrpcHeaders.apply(c, ACCESS_KEY);
         if (COOKIE != null && !COOKIE.isEmpty()) c.setRequestProperty("cookie", COOKIE);
         InputStream in = c.getResponseCode() >= 400 ? c.getErrorStream() : c.getInputStream();
         ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -222,29 +223,5 @@ public class BiliApi {
         int s = json.indexOf(':', i) + 1, e = s;
         while (e < json.length() && (Character.isDigit(json.charAt(e)) || json.charAt(e) == '-')) e++;
         try { return Long.parseLong(json.substring(s, e).trim()); } catch (Exception ex) { return 0; }
-    }
-
-    /** 带风控重试 + wbi 回退的视频信息 JSON 获取。 */
-    static String viewJson(String q) throws Exception {
-        Exception last = null;
-        for (int a = 0; a < 4; a++) {
-            if (a > 0) { try { Thread.sleep(400L * a); } catch (InterruptedException ignored) {} }
-            try {
-                String b = httpGet("https://api.bilibili.com/x/web-interface/view" + q);
-                if (b != null && b.contains("\"aid\"")) return b;
-                last = new Exception("view 无 aid");
-            } catch (Exception e) { last = e; }
-        }
-        try {
-            Map<String, String> p = new LinkedHashMap<>();
-            int bi = q.indexOf("bvid=");
-            int ai = q.indexOf("aid=");
-            if (bi >= 0) p.put("bvid", q.substring(bi + 5));
-            else if (ai >= 0) p.put("aid", q.substring(ai + 4));
-            WbiSign.sign(p);
-            String b = httpGet("https://api.bilibili.com/x/web-interface/wbi/view?" + SpaceApi.buildQuery(p));
-            if (b != null && b.contains("\"aid\"")) return b;
-        } catch (Exception e) { last = e; }
-        throw last != null ? last : new Exception("视频信息获取失败");
     }
 }
