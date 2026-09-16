@@ -126,8 +126,11 @@ public class Exporter {
                         cb.on("已用 MediaStore 发布到 Download：" + n + " 个文件", 0, 0);
                         outPath = "Download/" + relBase + "/视频评论";
                     } catch (Throwable t) {
-                        cb.on("MediaStore 发布失败：" + t.getMessage()
-                                + "（文件留在 " + dir.getAbsolutePath() + "）", 0, 0);
+                        try {
+                            java.io.PrintWriter pw = new java.io.PrintWriter(new java.io.File(ctx.getExternalFilesDir(null), "publish_err.txt"));
+                            t.printStackTrace(pw); pw.close();
+                        } catch (Throwable ig) {}
+                        cb.on("MediaStore 发布失败：" + t.getMessage(), 0, 0);
                     }
                 }
                 cb.done(outPath, mains.size(), sub, st[1], v.replyCount);
