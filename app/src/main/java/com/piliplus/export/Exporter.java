@@ -16,6 +16,8 @@ import java.util.List;
  *        弹幕.md
  *        视频评论/评论.md
  *        视频评论/评论图片/评论N.jpg
+ *
+ * 若无 MANAGE_EXTERNAL_STORAGE：先落 App 私有目录，结束时用 MediaStore API 镜像到 Download。
  */
 public class Exporter {
 
@@ -30,6 +32,9 @@ public class Exporter {
 
     private final Context ctx;
     private final Progress cb;
+
+    /** true 表示输出落在 App 私有目录，导出结束需用 MediaStore 镜像到 Download。 */
+    private boolean useMsPublish = false;
 
     /** 是否拉弹幕 */
     public boolean danmaku = true;
@@ -111,7 +116,21 @@ public class Exporter {
                         + (v.replyCount > 0 ? ("> 接口报告 " + v.replyCount + " 条\n") : "")
                         + "> 导出：" + MdWriter2.now() + "\n";
                 int[] st = CommentSaver.save(cdir, header, mains, withPics, null);
-                cb.done(cdir.getAbsolutePath(), mains.size(), sub, st[1], v.replyCount);
+
+                // ---- 发布到共享 Download ----
+                String outPath = cdir.getAbsolutePath();
+                if (useMsPublish) {
+                    String relBase = "PiliPlus_导出/单视频/" + NameUtil.safe(v.title);
+                    try {
+                        int n = MsStore.publishTree(ctx, dir, relBase);
+                        cb.on("已用 MediaStore 发布到 Download：" + n + " 个文件", 0, 0);
+                        outPath = "Download/" + relBase + "/视频评论";
+                    } catch (Throwable t) {
+                        cb.on("MediaStore 发布失败：" + t.getMessage()
+                                + "（文件留在 " + dir.getAbsolutePath() + "）", 0, 0);
+                    }
+                }
+                cb.done(outPath, mains.size(), sub, st[1], v.replyCount);
 
             } catch (Throwable t) {
                 cb.error(t.getClass().getSimpleName() + ": " + t.getMessage());
@@ -156,17 +175,24 @@ public class Exporter {
         return mains;
     }
 
+    /**
+     * 输出根目录。
+     * 有 MANAGE_EXTERNAL_STORAGE 时直写共享 Download；否则落私有目录，
+     * 导出结束后由 MsStore.publishTree 用 MediaStore API 镜像到 Download。
+     */
     private File exportRoot() {
-        File d = new File("/storage/emulated/0/Download/PiliPlus_导出/单视频");
-        if (writableDir(d)) return d;
+        File shared = new File("/storage/emulated/0/Download/PiliPlus_导出/单视频");
+        if (writableDir(shared)) { useMsPublish = false; return shared; }
+        useMsPublish = true;
         File ext = ctx.getExternalFilesDir(null);
-        if (ext != null) { File f = new File(ext, "PiliPlus_导出/单视频"); if (writableDir(f)) return f; }
-        File f = new File(ctx.getFilesDir(), "PiliPlus_导出/单视频");
-        writableDir(f);
+        File f = (ext != null)
+                ? new File(ext, "PiliPlus_导出/单视频")
+                : new File(ctx.getFilesDir(), "PiliPlus_导出/单视频");
+        if (!f.exists()) f.mkdirs();
         return f;
     }
 
-    /** 目录必须存在、是目录、且能实际建文件才算可用。Android 11+ FUSE 共享存储按创建者 UID 判写权限，共存包会互相锁死。 */
+    /** 目录必须存在、是目录、且能实际建文件才算可用。 */
     static boolean writableDir(File d) {
         if (!d.exists() && !d.mkdirs()) return false;
         if (!d.isDirectory()) return false;
