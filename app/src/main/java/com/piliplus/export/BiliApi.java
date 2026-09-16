@@ -107,7 +107,7 @@ public class BiliApi {
     }
 
     // ---------------- 视频信息 ----------------
-    public static class Video { public long aid; public String bvid = ""; public String title = ""; public long replyCount; public long duration; }
+    public static class Video { public long aid; public String bvid = ""; public String title = ""; public long replyCount; public long duration; public String ownerName = ""; public long ownerMid; }
 
     public static Video videoInfo(String id) throws Exception {
         String q = id.startsWith("BV") ? "?bvid=" + id : "?aid=" + id.replace("av", "");
@@ -115,7 +115,7 @@ public class BiliApi {
         Video v = new Video();
         v.aid = jLong(body, "aid");
         v.bvid = jStr(body, "bvid");
-        v.title = jStr(body, "title");
+        v.title = jStr(body, "title"); int oi = body.indexOf("\"owner\""); if (oi > 0) { String ob = body.substring(oi); v.ownerName = jStr(ob, "name"); v.ownerMid = jLong(ob, "mid"); }
         v.duration = jLong(body, "duration");
         int i = body.indexOf("\"reply\"");
         if (i > 0) {
