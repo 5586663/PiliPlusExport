@@ -18,7 +18,7 @@ import java.io.OutputStream;
  *
  * 背景：Android 11+ 无 MANAGE_EXTERNAL_STORAGE 时，普通 App 无法用 File API 直写
  * /storage/emulated/0/Download。MediaStore 是官方允许的替代路径：通过
- * ContentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI) 在 Download
+ * ContentResolver.insert(MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)) 在 Download
  * 下建文件，再向返回的 Uri 写字节，无需任何存储权限。
  *
  * 本类负责输出侧：导出先落 App 私有目录（File API 自由），结束时整树复制到 Download。
@@ -87,7 +87,6 @@ public final class MsStore {
         String relPath = Environment.DIRECTORY_DOWNLOADS + (relDir.isEmpty() ? "" : "/" + relDir) + "/";
         String sel = MediaStore.Downloads.RELATIVE_PATH + "=? AND " + MediaStore.Downloads.DISPLAY_NAME + "=?";
         String[] args = { relPath, name };
-        try { cr.delete(MediaStore.Downloads.EXTERNAL_CONTENT_URI, sel, args); } catch (Throwable ignored) {}
 
         ContentValues cv = new ContentValues();
         cv.put(MediaStore.Downloads.DISPLAY_NAME, name);
@@ -95,7 +94,7 @@ public final class MsStore {
         cv.put(MediaStore.Downloads.RELATIVE_PATH, relPath);
         cv.put(MediaStore.Downloads.IS_PENDING, 1);
 
-        Uri uri = cr.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv);
+        Uri uri = cr.insert(MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), cv);
         if (uri == null) throw new Exception("MediaStore insert 失败：" + relPath + name);
         try (InputStream is = new FileInputStream(src);
              OutputStream os = cr.openOutputStream(uri)) {
