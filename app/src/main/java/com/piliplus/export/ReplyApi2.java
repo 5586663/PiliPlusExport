@@ -4,21 +4,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * 带 type 参数的评论接口。
- *
- * BiliApi.mainList() 把 type 写死为 1（视频），动态评论需要 type=17，
- * 因此这里提供参数化版本，复用 BiliApi.grpcRaw 通道。
- *
- * 字段号同 BiliApi（已核实）：
- *   MainListReq:  oid=1 type=2 cursor=3 pagination=10
- *   DetailListReq: oid=1 type=2 root=3 rpid=4 cursor=5 scene=6 mode=7 pagination=8
- *
- * 评论区 type 取值：
- *   1  = 视频
- *   12 = 专栏
- *   17 = 动态
- */
 public final class ReplyApi2 {
 
     private ReplyApi2() {}
@@ -35,7 +20,6 @@ public final class ReplyApi2 {
         public String nextOffset;
     }
 
-    /** 主评论分页（可指定 type） */
     public static Page mainList(long oid, int type, long nextCursor, int mode, String offset) throws Exception {
         byte[] req = Proto.cat(
                 Proto.fv(1, oid),
@@ -44,7 +28,6 @@ public final class ReplyApi2 {
                 offset == null ? null : Proto.fb(10, Proto.fb(2, offset.getBytes(StandardCharsets.UTF_8))));
         byte[] resp = BiliApi.grpcRaw(BiliApi.MAIN, req);
         Page p = new Page();
-
         byte[] cur = Proto.getB(resp, 1);
         if (cur != null) {
             p.nextCursor = Proto.getV(cur, 1);
@@ -52,7 +35,6 @@ public final class ReplyApi2 {
         }
         byte[] sc = Proto.getB(resp, 3);
         if (sc != null) p.totalCount = Proto.getV(sc, 16);
-
         byte[] pr = Proto.getB(resp, 20);
         if (pr != null) {
             byte[] off = Proto.getB(pr, 1);
@@ -73,13 +55,11 @@ public final class ReplyApi2 {
         public String nextOffset;
     }
 
-    /** 楼中楼分页（可指定 type） */
     public static SubPage detailList(long oid, int type, long root, long cursor, int mode, String offset) throws Exception {
         byte[] req = Proto.cat(
                 Proto.fv(1, oid),
                 Proto.fv(2, type),
                 Proto.fv(3, root),
-                Proto.fv(4, root),
                 cursor == 0 ? null : Proto.fb(5, Proto.cat(Proto.fv(1, cursor), Proto.fv(4, 0))),
                 Proto.fv(6, 0),
                 Proto.fv(7, mode),
@@ -95,6 +75,13 @@ public final class ReplyApi2 {
                 if (r.valid()) p.replies.add(r);
             }
         }
+        try {
+            int lc = 0;
+            for (Reply rr : p.replies) if (rr.location != null && !rr.location.isEmpty()) lc++;
+            java.io.FileWriter fw = new java.io.FileWriter("/data/local/tmp/diag_sub.txt", true);
+            fw.write("root=" + root + " subs=" + p.replies.size() + " withLoc=" + lc + "\n");
+            fw.close();
+        } catch (Throwable t) {}
         return p;
     }
 }
