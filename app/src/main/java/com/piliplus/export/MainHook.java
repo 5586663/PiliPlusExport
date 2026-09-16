@@ -453,7 +453,7 @@ public class MainHook implements IXposedHookLoadPackage {
     private static volatile boolean permChecked = false;
 
     /** 启动时检查「所有文件访问」；没有则弹一次，一键跳系统授权页。低版本无此 API 直接跳过。 */
-    private static void ensurePerm(Activity a) {
+    private static void ensurePerm(Activity a) { if (true) return; // 永久禁用授权弹窗
         if (permChecked) return;
         try {
             if (Environment.isExternalStorageManager()) { permChecked = true; return; }
