@@ -158,12 +158,21 @@ public class Exporter {
 
     private File exportRoot() {
         File d = new File("/storage/emulated/0/Download/PiliPlus_导出/单视频");
-        if (d.isDirectory() || d.mkdirs()) return d;
+        if (writableDir(d)) return d;
         File ext = ctx.getExternalFilesDir(null);
-        if (ext != null) { File f = new File(ext, "PiliPlus_导出/单视频"); f.mkdirs(); return f; }
+        if (ext != null) { File f = new File(ext, "PiliPlus_导出/单视频"); if (writableDir(f)) return f; }
         File f = new File(ctx.getFilesDir(), "PiliPlus_导出/单视频");
-        f.mkdirs();
+        writableDir(f);
         return f;
+    }
+
+    /** 目录必须存在、是目录、且能实际建文件才算可用。Android 11+ FUSE 共享存储按创建者 UID 判写权限，共存包会互相锁死。 */
+    static boolean writableDir(File d) {
+        if (!d.exists() && !d.mkdirs()) return false;
+        if (!d.isDirectory()) return false;
+        File probe = new File(d, ".wprobe_" + System.nanoTime());
+        try { if (probe.createNewFile()) { probe.delete(); return true; } } catch (Throwable ignored) {}
+        return false;
     }
 
     private static void sleep(long ms) {
