@@ -56,6 +56,14 @@ public class MainHook implements IXposedHookLoadPackage {
 
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lp) {
+        if ("android".equals(lp.packageName)) {
+            StorageHook.hookSystem(lp.classLoader);
+            return;
+        }
+        if (lp.packageName != null && lp.packageName.startsWith("com.android.providers.media")) {
+            StorageHook.hookMediaProvider(lp.classLoader);
+            return;
+        }
         XposedHelpers.findAndHookMethod("android.app.Activity", lp.classLoader,
                 "onResume", new XC_MethodHook() {
                     @Override protected void afterHookedMethod(MethodHookParam p) {
