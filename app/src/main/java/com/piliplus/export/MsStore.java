@@ -96,7 +96,16 @@ public final class MsStore {
         cv.put(MediaStore.Downloads.IS_PENDING, 1);
         try { cr.delete(MediaStore.Downloads.EXTERNAL_CONTENT_URI, sel, args); } catch (Throwable ig) {}
 
-        Uri uri = cr.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv);
+        Uri uri = null;
+        for (int ia = 0; ia < 6 && uri == null; ia++) {
+            try {
+                uri = cr.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv);
+            } catch (Throwable t) {
+                if (ia == 5) throw t;
+                sleepMs(150L * (ia + 1));
+            }
+            if (uri == null && ia < 5) sleepMs(150L * (ia + 1));
+        }
         if (uri == null) throw new Exception("MediaStore insert 失败：" + relPath + name);
         OutputStream os = null;
         for (int attempt = 0; attempt < 6; attempt++) {
