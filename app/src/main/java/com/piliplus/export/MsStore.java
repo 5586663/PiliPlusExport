@@ -93,6 +93,7 @@ public final class MsStore {
         cv.put(MediaStore.Downloads.MIME_TYPE, mime);
         cv.put(MediaStore.Downloads.RELATIVE_PATH, relPath);
         cv.put(MediaStore.Downloads.IS_PENDING, 1);
+        try { cr.delete(MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), sel, args); } catch (Throwable ig) {}
 
         Uri uri = cr.insert(MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), cv);
         if (uri == null) throw new Exception("MediaStore insert 失败：" + relPath + name);
