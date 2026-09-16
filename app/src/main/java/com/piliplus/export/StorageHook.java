@@ -8,7 +8,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import de.robv.android.xposed.AndroidAppHelper;
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
@@ -18,10 +17,7 @@ import de.robv.android.xposed.XposedHelpers;
  *
  * 只针对 Download 路径放行：目标包（piliplus / piliplut）uid 访问
  * /storage/emulated/0/Download 及其子路径时，FUSE 放行判定恒为 true；
- * 其余路径（含 Android/data 外的私人目录等）不受影响，仍走系统原判定。
- *
- * 放行发生在 FUSE JNI 回调的 Java 侧：FuseDaemon.isUidAllowedAccessToDataOrObbPath(uid, path)。
- * 无需 MANAGE 授权、无需 MediaStore 中转、无需重启 system_server，强停 mediaprovider 即生效。
+ * 其余路径不受影响。
  *
  * 作用域：LSPosed 勾「媒体存储 / MediaProvider」（com.android.providers.media.module）。
  */
@@ -34,12 +30,9 @@ public final class StorageHook {
             "com.example.piliplut"
     };
 
-    /** 只放行这些前缀下的路径。 */
     private static final String[] ALLOW_PREFIXES = {
             "/storage/emulated/0/Download",
-            "/storage/emulated/0/Download/",
-            "/Download",
-            "/Download/"
+            "/Download"
     };
 
     private static final String[] CANDIDATE_CLASSES = {
@@ -106,10 +99,20 @@ public final class StorageHook {
         return false;
     }
 
+    private static Application currentApp() {
+        try {
+            Class<?> at = Class.forName("android.app.ActivityThread");
+            Object app = at.getMethod("currentApplication").invoke(null);
+            return (Application) app;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
     private static synchronized void resolveUids() {
         if (targetUids != null) return;
         try {
-            Application app = AndroidAppHelper.currentApplication();
+            Application app = currentApp();
             if (app == null) { log("[PiliExport] 无 Application，暂缓解析"); return; }
             PackageManager pm = app.getPackageManager();
             List<Integer> u = new ArrayList<>();
