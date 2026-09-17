@@ -103,7 +103,7 @@ public class Exporter {
                 // ---- 评论 IP 属地回填 ----
                 if (ipBackfill && !mains.isEmpty()) {
                     try {
-                        int n = IpBackfill.apply(v.aid, ReplyApi2.TYPE_VIDEO, mains);
+                        int n = IpBackfill2.apply(v.aid, ReplyApi2.TYPE_VIDEO, mains);
                         cb.on("IP属地回填 " + n + " 条", 0, 0);
                     } catch (Throwable t) {
                         cb.on("IP属地失败：" + t.getMessage(), 0, 0);
