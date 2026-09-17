@@ -60,9 +60,9 @@ public final class ReplyApi2 {
                 Proto.fv(1, oid),
                 Proto.fv(2, type),
                 Proto.fv(3, root),
-                Proto.fv(4, root),
+                Proto.fv(4, 0),
                 cursor == 0 ? null : Proto.fb(5, Proto.cat(Proto.fv(1, cursor), Proto.fv(4, 0))),
-                Proto.fv(6, 1),
+                Proto.fv(6, 0),
                 Proto.fv(7, mode),
                 offset == null ? null : Proto.fb(8, Proto.fb(2, offset.getBytes(StandardCharsets.UTF_8))));
         byte[] resp = BiliApi.grpcRaw(BiliApi.DETAIL, req);
