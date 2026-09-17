@@ -154,7 +154,6 @@ public class BiliApi {
         c.setRequestProperty("mobi_app", "android");
         c.setRequestProperty("buvid", "XY00000000000000000000000000000000000");
         GrpcHeaders.apply(c, ACCESS_KEY);
-        if (COOKIE != null && !COOKIE.isEmpty()) c.setRequestProperty("cookie", COOKIE);
 
         try (OutputStream os = c.getOutputStream()) { os.write(framed.toByteArray()); }
 
