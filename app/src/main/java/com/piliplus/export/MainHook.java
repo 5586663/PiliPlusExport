@@ -401,9 +401,13 @@ public class MainHook implements IXposedHookLoadPackage {
                 if (cur.length() >= 2) t.add(cur.toString());
                 StringBuilder sb = new StringBuilder();
                 String[] ks = {"SESSDATA", "bili_jct", "DedeUserID", "DedeUserID__ckMd5", "buvid3"};
+                String bv3 = null;
                 for (int k = 0; k < ks.length; k++)
                     for (int i = 0; i + 1 < t.size(); i++)
-                        if (t.get(i).equals(ks[k])) { sb.append(ks[k]).append("=").append(t.get(i + 1)).append("; "); break; }
+                        if (t.get(i).equals(ks[k])) { sb.append(ks[k]).append("=").append(t.get(i + 1)).append("; "); if (k == 4) bv3 = t.get(i + 1); break; }
+                String ak = findAccessKey(a);
+                if (ak != null) BiliApi.ACCESS_KEY = ak;
+                if (bv3 != null) GrpcHeaders.buvid = bv3;
                 if (sb.length() > 0) { BiliApi.COOKIE = sb.toString(); return; }
             }
         } catch (Throwable ignored) {}
@@ -414,6 +418,21 @@ public class MainHook implements IXposedHookLoadPackage {
         } catch (Throwable ignored) {}
     }
 
+    private static String findAccessKey(byte[] a) {
+        for (int i = 0; i + 28 <= a.length; i++) {
+            if ((a[i] & 0xff) != 1 || (a[i + 1] & 0xff) != 4) continue;
+            int len = (a[i + 2] & 0xff) | ((a[i + 3] & 0xff) << 8) | ((a[i + 4] & 0xff) << 16) | ((a[i + 5] & 0xff) << 24);
+            if (len < 16 || len > 64) continue;
+            int vs = i + 6, ve = vs + len;
+            if (ve + 6 > a.length) continue;
+            boolean ok = true;
+            for (int k = vs; k < ve; k++) { int ch = a[k] & 0xff; if (!((ch >= 48 && ch <= 57) || (ch >= 97 && ch <= 122) || (ch >= 65 && ch <= 90))) { ok = false; break; } }
+            if (!ok) continue;
+            if ((a[ve] & 0xff) != 2 || (a[ve + 1] & 0xff) != 4) continue;
+            return new String(a, vs, len);
+        }
+        return null;
+    }
     private static String readClipBv(Context c) {
         try {
             String t = readClipRaw(c);
