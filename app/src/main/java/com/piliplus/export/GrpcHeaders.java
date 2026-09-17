@@ -16,7 +16,9 @@ public final class GrpcHeaders {
     static final String OSVER = "15";
     static final String UA = "Mozilla/5.0 BiliDroid/2.0.1 (bbcallen@gmail.com) os/android model/android_hd mobi_app/android_hd build/2001100 channel/master innerVer/2001100 osVer/15 network/2";
     static final String TRACE = "11111111111111111111111111111111:1111111111111111:0:0";
-    static volatile String buvid = "XY00000000000000000000000000000000000";
+
+    /** 真实 buvid，由 Hook 从 PiliPlus 注入；缺失时回退。 */
+    public static volatile String buvid = "XY00000000000000000000000000000000000";
 
     private static byte[] b(String s) { return s == null ? new byte[0] : s.getBytes(StandardCharsets.UTF_8); }
 
@@ -65,8 +67,8 @@ public final class GrpcHeaders {
     }
 
     static void apply(HttpURLConnection c, String accessKey) {
-        c.setRequestProperty("grpc-encoding", "identity");
-        c.setRequestProperty("grpc-accept-encoding", "gzip");
+        c.setRequestProperty("grpc-encoding", "gzip");
+        c.setRequestProperty("gzip-accept-encoding", "gzip,identity");
         c.setRequestProperty("User-Agent", UA);
         c.setRequestProperty("bili-http-engine", "cronet");
         c.setRequestProperty("x-bili-aurora-zone", "");
