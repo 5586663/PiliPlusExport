@@ -76,6 +76,32 @@ public final class ReplyApi2 {
                 if (r.valid()) p.replies.add(r);
             }
         }
+        diagDetail(oid, root, rootB, p);
         return p;
+    }
+
+    private static void diagDetail(long oid, long root, byte[] rootB, SubPage p) {
+        try {
+            int parsedLoc = 0;
+            for (Reply r : p.replies) if (r.location != null && !r.location.isEmpty()) parsedLoc++;
+            int ctrlCnt = 0, field25 = 0;
+            if (rootB != null) {
+                for (byte[] sb : Proto.getAllB(rootB, 1)) {
+                    byte[] c = Proto.getB(sb, 14);
+                    if (c != null) { ctrlCnt++; if (Proto.getB(c, 25) != null) field25++; }
+                }
+            }
+            String msg = "detailList oid=" + oid + " root=" + root + " subs=" + p.replies.size()
+                    + " ctrl=" + ctrlCnt + " field25=" + field25 + " parsedLoc=" + parsedLoc;
+            android.util.Log.i("PiliExportDiag", msg);
+            java.io.File f = new java.io.File("/storage/emulated/0/Download/PiliPlus_导出/diag_detail.txt");
+            java.io.File d = f.getParentFile();
+            if (d != null && !d.exists()) d.mkdirs();
+            java.io.FileWriter fw = new java.io.FileWriter(f, true);
+            fw.write(msg + "\n");
+            fw.close();
+        } catch (Throwable t) {
+            android.util.Log.e("PiliExportDiag", "diag fail", t);
+        }
     }
 }
