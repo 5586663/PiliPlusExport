@@ -206,7 +206,7 @@ public class MainHook implements IXposedHookLoadPackage {
     }
 
     private static void exportOneVideo(Activity a, String videoId, boolean withPics, boolean downloadVideo) {
-        injectCookie();
+        injectCookie(a);
         AlertDialog dlg = progressDialog(a, "正在导出评论");
         TextView tv = (TextView) dlg.findViewById(android.R.id.message);
 
@@ -335,7 +335,7 @@ public class MainHook implements IXposedHookLoadPackage {
     }
 
     private static void exportUp(Activity a, long mid, UpExporter.Options opt) {
-        injectCookie();
+        injectCookie(a);
         AlertDialog dlg = progressDialog(a, "正在导出 UP 主");
         TextView tv = (TextView) dlg.findViewById(android.R.id.message);
 
@@ -382,11 +382,35 @@ public class MainHook implements IXposedHookLoadPackage {
         return d;
     }
 
-    private static void injectCookie() {
+    private static void injectCookie(Context c) {
+        try {
+            java.io.File f = new java.io.File(c.getFilesDir().getParentFile() + "/files/hive/account.hive");
+            if (f.exists()) {
+                java.io.FileInputStream in = new java.io.FileInputStream(f);
+                byte[] a = new byte[(int) f.length()];
+                int o = 0, n;
+                while (o < a.length && (n = in.read(a, o, a.length - o)) > 0) o += n;
+                in.close();
+                StringBuilder cur = new StringBuilder();
+                java.util.List<String> t = new java.util.ArrayList<String>();
+                for (int i = 0; i < a.length; i++) {
+                    int v = a[i] & 0xff;
+                    if (v >= 32 && v < 127) cur.append((char) v);
+                    else { if (cur.length() >= 2) t.add(cur.toString()); cur.setLength(0); }
+                }
+                if (cur.length() >= 2) t.add(cur.toString());
+                StringBuilder sb = new StringBuilder();
+                String[] ks = {"SESSDATA", "bili_jct", "DedeUserID", "DedeUserID__ckMd5", "buvid3"};
+                for (int k = 0; k < ks.length; k++)
+                    for (int i = 0; i + 1 < t.size(); i++)
+                        if (t.get(i).equals(ks[k])) { sb.append(ks[k]).append("=").append(t.get(i + 1)).append("; "); break; }
+                if (sb.length() > 0) { BiliApi.COOKIE = sb.toString(); return; }
+            }
+        } catch (Throwable ignored) {}
         try {
             String ck = CookieManager.getInstance().getCookie("https://api.bilibili.com");
-            if (ck == null || ck.isEmpty()) ck = CookieManager.getInstance().getCookie("https://app.bilibili.com");
-            if (ck != null && !ck.isEmpty()) BiliApi.COOKIE = ck;
+            if (ck == null || ck.length() == 0) ck = CookieManager.getInstance().getCookie("https://app.bilibili.com");
+            if (ck != null && ck.length() > 0) BiliApi.COOKIE = ck;
         } catch (Throwable ignored) {}
     }
 
