@@ -1,6 +1,5 @@
 package com.piliplus.export;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -8,28 +7,21 @@ import java.util.Map;
 
 /**
  * IP 属地回填。
- *
- * 两条路径：
- * 1) 网页端 wbi/main 按 rpid 建映射，回填主评论 + 内嵌首屏楼中楼。
- * 2) 对楼中楼仍缺 location 的主评论，走 gRPC DetailList(scene=REPLY) 拉全量补。
- *
- * 【诊断版】仅新增 logcat/文件诊断，业务逻辑不变。tag=PiliExportDiag
+ *  1) /x/v2/reply/wbi/main 建主评论 location 映射，并顺带取首屏内嵌楼中楼；
+ *  2) /x/v2/reply/reply 针对仍缺 IP 的主评论，按 root 拉全部楼中楼补全。
+ * 官方 PiliPlus lib/http/reply.dart: Api.replyReplyList = '/x/v2/reply/reply'，无需 wbi 签名。
+ * tag = PiliExportDiag
  */
 public final class IpBackfill {
 
     private IpBackfill() {}
 
     private static final String TAG = "PiliExportDiag";
-
     private static final String MAIN = "https://api.bilibili.com/x/v2/reply/wbi/main";
+    private static final String SUB  = "https://api.bilibili.com/x/v2/reply/reply";
     private static final long THROTTLE_MS = 80;
     private static final int MAX_PAGES = 200;
     private static final int SUB_MAX_PAGES = 50;
-    private static final long SUB_THROTTLE_MS = 40;
-
-    public static volatile int statWeb = 0;
-    public static volatile int statGrpcRoots = 0;
-    public static volatile int statGrpcHits = 0;
 
     private static void log(String s) {
         android.util.Log.i(TAG, s);
@@ -69,7 +61,6 @@ public final class IpBackfill {
                 Map<String, Object> data = Json2.obj(root.get("data"));
                 if (data == null) break;
                 pages++;
-
                 List<Object> replies = Json2.arr(data.get("replies"));
                 if (replies != null) {
                     for (Object o : replies) {
@@ -79,7 +70,6 @@ public final class IpBackfill {
                         if (rpid == 0) continue;
                         String loc = clean(locOf(m));
                         if (loc != null && !loc.isEmpty()) map.put(rpid, loc);
-
                         List<Object> subs = Json2.arr(m.get("replies"));
                         if (subs != null) {
                             for (Object so : subs) {
@@ -93,7 +83,6 @@ public final class IpBackfill {
                         }
                     }
                 }
-
                 Map<String, Object> cursor = Json2.obj(data.get("cursor"));
                 if (cursor != null) {
                     isEnd = Json2.lng(cursor, "is_end") != 0;
@@ -112,11 +101,64 @@ public final class IpBackfill {
         return map;
     }
 
+    public static Map<Long, String> fetchSubLocations(long oid, int type, long root) {
+        Map<Long, String> map = new HashMap<>();
+        long lastCode = -999;
+        int pages = 0;
+        for (int pn = 1; pn <= SUB_MAX_PAGES; pn++) {
+            if (pn > 1) sleep(THROTTLE_MS);
+            try {
+                LinkedHashMap<String, String> p = new LinkedHashMap<>();
+                p.put("oid", String.valueOf(oid));
+                p.put("type", String.valueOf(type));
+                p.put("root", String.valueOf(root));
+                p.put("ps", "20");
+                p.put("pn", String.valueOf(pn));
+                p.put("sort", "1");
+                String url = SUB + "?" + SpaceApi.buildQuery(p);
+                String body = SpaceApi.getWithHeaders(url, SpaceApi.PC_UA,
+                        "https://www.bilibili.com/");
+                Map<String, Object> r = Json2.obj(Json2.parse(body));
+                if (r == null) { lastCode = -998; break; }
+                lastCode = Json2.lng(r, "code");
+                if (lastCode != 0) break;
+                Map<String, Object> data = Json2.obj(r.get("data"));
+                if (data == null) break;
+                pages++;
+                List<Object> subs = Json2.arr(data.get("replies"));
+                if (subs == null || subs.isEmpty()) break;
+                for (Object o : subs) {
+                    Map<String, Object> m = Json2.obj(o);
+                    if (m == null) continue;
+                    long rpid = Json2.lng(m, "rpid");
+                    if (rpid == 0) continue;
+                    String loc = clean(locOf(m));
+                    if (loc != null && !loc.isEmpty()) map.put(rpid, loc);
+                }
+                Map<String, Object> page = Json2.obj(data.get("page"));
+                if (page != null) {
+                    long count = Json2.lng(page, "count");
+                    if (pn * 20 >= count) break;
+                } else if (subs.size() < 20) {
+                    break;
+                }
+            } catch (Throwable t) {
+                lastCode = -997;
+                break;
+            }
+        }
+        log("fetchSubLocations root=" + root + " pages=" + pages
+                + " map=" + map.size() + " lastCode=" + lastCode);
+        return map;
+    }
+
     public static int apply(long oid, int type, List<Reply> mains) {
         if (mains == null || mains.isEmpty()) return 0;
+        Map<Long, String> map = fetchLocations(oid, type);
         int n = 0;
         int subsTotal = 0, subsLoc = 0;
         for (Reply m : mains) {
+            if (fill(m, map)) n++;
             if (m != null && m.subs != null) {
                 for (Reply s : m.subs) {
                     subsTotal++;
@@ -124,69 +166,25 @@ public final class IpBackfill {
                 }
             }
         }
-
-        Map<Long, String> map = fetchLocations(oid, type);
-        if (!map.isEmpty()) {
-            for (Reply m : mains) {
-                if (fill(m, map)) n++;
-                for (Reply s : m.subs) if (fill(s, map)) n++;
-            }
-        }
-        statWeb = n;
-        log("apply oid=" + oid + " mains=" + mains.size() + " locMap=" + map.size()
-                + " subs=" + subsTotal + " subsLocAfterWeb=" + subsLoc + " filledByWeb=" + n);
-
-        int roots = 0, hits = 0, grpcReplies = 0;
+        log("apply afterMainMap mains=" + mains.size() + " locMap=" + map.size()
+                + " subs=" + subsTotal + " subsWithLoc=" + subsLoc + " filled=" + n);
+        int tried = 0, hit = 0, extra = 0;
         for (Reply m : mains) {
-            if (m.subs == null || m.subs.isEmpty()) continue;
-            boolean need = false;
+            if (m == null || m.subs == null || m.subs.isEmpty()) continue;
+            boolean missing = false;
             for (Reply s : m.subs) {
-                if (s.location == null || s.location.trim().isEmpty()) { need = true; break; }
+                if (s != null && (s.location == null || s.location.trim().isEmpty())) { missing = true; break; }
             }
-            if (!need) continue;
-            roots++;
-            try {
-                List<Reply> full = fetchSubsViaGrpc(oid, type, m.id);
-                grpcReplies += full.size();
-                Map<Long, String> subMap = new HashMap<>();
-                for (Reply x : full) {
-                    if (x.location != null && !x.location.trim().isEmpty()) subMap.put(x.id, x.location);
-                }
-                if (!subMap.isEmpty()) {
-                    for (Reply s : m.subs) if (fill(s, subMap)) { n++; hits++; }
-                }
-            } catch (Throwable t) { }
-            sleep(SUB_THROTTLE_MS);
+            if (!missing) continue;
+            tried++;
+            Map<Long, String> subMap = fetchSubLocations(oid, type, m.id);
+            if (subMap.isEmpty()) continue;
+            hit++;
+            for (Reply s : m.subs) if (fill(s, subMap)) { n++; extra++; }
         }
-        statGrpcRoots = roots;
-        statGrpcHits = hits;
-        log("apply subRefill roots=" + roots + " grpcReplies=" + grpcReplies
-                + " rootsWithLocMap=" + hits + " totalFilled=" + n);
+        log("apply subBackfill triedRoots=" + tried + " rootsWithMap=" + hit
+                + " extraFilled=" + extra + " totalFilled=" + n);
         return n;
-    }
-
-    private static List<Reply> fetchSubsViaGrpc(long oid, int type, long root) {
-        List<Reply> out = new ArrayList<>();
-        long cursor = 0;
-        String offset = null;
-        String prevKey = "";
-        int stall = 0;
-        for (int pg = 0; pg < SUB_MAX_PAGES; pg++) {
-            if (pg > 0) sleep(SUB_THROTTLE_MS);
-            ReplyApi2.SubPage sp;
-            try { sp = ReplyApi2.detailList(oid, type, root, cursor, 2, offset); }
-            catch (Exception e) { break; }
-            if (sp.replies.isEmpty()) break;
-            StringBuilder key = new StringBuilder();
-            for (Reply x : sp.replies) key.append(x.id).append(',');
-            if (key.toString().equals(prevKey)) { if (++stall >= 3) break; }
-            else { stall = 0; prevKey = key.toString(); }
-            out.addAll(sp.replies);
-            if (sp.replies.size() < 20) break;
-            if (sp.nextCursor != 0) cursor = sp.nextCursor;
-            if (sp.nextOffset != null) offset = sp.nextOffset;
-        }
-        return out;
     }
 
     private static boolean fill(Reply r, Map<Long, String> map) {
