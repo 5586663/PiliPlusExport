@@ -9,26 +9,14 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.zip.GZIPInputStream;
+import java.util.zip.GZIPOutputStream;
 
-/**
- * B站 gRPC 接口调用。
- * 字段号全部按 PiliPlus v1.pb.dart / v1.pbenum.dart 核实:
- *   Mode: TIME=2, HOT=3  (没有 1)
- *   MainListReq:  oid=1 type=2 cursor=3 pagination=10
- *   CursorReq:    next=1 mode=4
- *   FeedPagination: offset=2
- *   MainListReply: cursor=1 replies=2 subjectControl=3 paginationReply=20
- *   DetailListReq: oid=1 type=2 root=3 rpid=4 cursor=5 scene=6 mode=7 pagination=8
- *   DetailListReply: cursor=1 root=3
- *   SubjectControl: count=16
- */
 public class BiliApi {
 
     public static final String MAIN   = "/bilibili.main.community.reply.v1.Reply/MainList";
     public static final String DETAIL = "/bilibili.main.community.reply.v1.Reply/DetailList";
     public static final String HOST   = "https://app.bilibili.com";
 
-    /** 由 Hook 注入：从 PiliPlus 进程内取到的 cookie 字符串 */
     public static volatile String COOKIE = "";
     public static volatile String ACCESS_KEY = "";
 
@@ -36,12 +24,11 @@ public class BiliApi {
     private static Log log = s -> {};
     public static void setLog(Log l) { log = l; }
 
-    // ---------------- 主评论分页 ----------------
     public static class Page {
         public List<Reply> replies = new ArrayList<>();
         public long nextCursor;
         public boolean isEnd;
-        public long totalCount;   // SubjectControl.count
+        public long totalCount;
         public String nextOffset;
     }
 
@@ -75,7 +62,6 @@ public class BiliApi {
         return p;
     }
 
-    // ---------------- 楼中楼分页 ----------------
     public static class SubPage {
         public List<Reply> replies = new ArrayList<>();
         public long nextCursor;
@@ -89,7 +75,7 @@ public class BiliApi {
                 Proto.fv(3, root),
                 Proto.fv(4, root),
                 cursor == 0 ? null : Proto.fb(5, Proto.cat(Proto.fv(1, cursor), Proto.fv(4, 0))),
-                Proto.fv(6, 1),      // scene = REPLY
+                Proto.fv(6, 1),
                 Proto.fv(7, mode),
                 offset == null ? null : Proto.fb(8, Proto.fb(2, offset.getBytes(StandardCharsets.UTF_8)))
         );
@@ -107,7 +93,6 @@ public class BiliApi {
         return p;
     }
 
-    // ---------------- 视频信息 ----------------
     public static class Video { public long aid; public String bvid = ""; public String title = ""; public long replyCount; public long duration; public String ownerName = ""; public long ownerMid; }
 
     public static Video videoInfo(String id) throws Exception {
@@ -127,15 +112,24 @@ public class BiliApi {
         return v;
     }
 
-    // ---------------- 底层 HTTP ----------------
     public static byte[] grpcRaw(String path, byte[] payload) throws Exception {
+        byte[] body = payload;
+        int flag = 0;
+        if (payload.length > 64) {
+            ByteArrayOutputStream gz = new ByteArrayOutputStream();
+            GZIPOutputStream g = new GZIPOutputStream(gz);
+            g.write(payload);
+            g.close();
+            body = gz.toByteArray();
+            flag = 1;
+        }
         ByteArrayOutputStream framed = new ByteArrayOutputStream();
-        framed.write(0);
-        framed.write((payload.length >>> 24) & 0xff);
-        framed.write((payload.length >>> 16) & 0xff);
-        framed.write((payload.length >>> 8) & 0xff);
-        framed.write(payload.length & 0xff);
-        framed.write(payload);
+        framed.write(flag);
+        framed.write((body.length >>> 24) & 0xff);
+        framed.write((body.length >>> 16) & 0xff);
+        framed.write((body.length >>> 8) & 0xff);
+        framed.write(body.length & 0xff);
+        framed.write(body);
 
         HttpURLConnection c = (HttpURLConnection) new URL(HOST + path).openConnection();
         c.setRequestMethod("POST");
@@ -144,16 +138,8 @@ public class BiliApi {
         c.setReadTimeout(20000);
         c.setRequestProperty("Content-Type", "application/grpc");
         c.setRequestProperty("TE", "trailers");
-        c.setRequestProperty("grpc-encoding", "identity");
-        c.setRequestProperty("grpc-accept-encoding", "gzip");
-        c.setRequestProperty("User-Agent", "Mozilla/5.0 BiliDroid/8.43.0 (bbcallen@gmail.com) os/android model/android mobi_app/android build/8430300 channel/master innerVer/8430300 osVer/15 network/2");
-        c.setRequestProperty("app-key", "android64");
-        c.setRequestProperty("env", "prod");
-        c.setRequestProperty("x-bili-aurora-zone", "sh001");
-        c.setRequestProperty("platform", "android");
-        c.setRequestProperty("mobi_app", "android");
-        c.setRequestProperty("buvid", "XY00000000000000000000000000000000000");
         GrpcHeaders.apply(c, ACCESS_KEY);
+        if (COOKIE != null && !COOKIE.isEmpty()) c.setRequestProperty("cookie", COOKIE);
 
         try (OutputStream os = c.getOutputStream()) { os.write(framed.toByteArray()); }
 
@@ -203,7 +189,6 @@ public class BiliApi {
         return new String(out.toByteArray(), StandardCharsets.UTF_8);
     }
 
-    // 极简 JSON 取值（避免引入依赖）
     static String jStr(String json, String key) {
         int i = json.indexOf("\"" + key + "\"");
         if (i < 0) return "";
