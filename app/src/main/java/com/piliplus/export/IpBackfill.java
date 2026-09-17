@@ -1,6 +1,5 @@
 package com.piliplus.export;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -9,24 +8,27 @@ import java.util.Map;
 /**
  * IP 属地回填。
  *
- * 两条路径：
- * 1) 网页端 wbi/main 按 rpid 建映射，回填主评论 + 内嵌首屏楼中楼。
- * 2) 对楼中楼仍缺 location 的主评论，走 gRPC DetailList(scene=REPLY) 拉全量补。
+ * 背景：App 端 gRPC MainList/DetailList 不下发 ReplyControl.location，
+ * 该字段只在网页端接口返回。
+ *
+ * 两级回填：
+ *  1) /x/v2/reply/wbi/main 按 rpid 建 location 映射，并顺带取主评论首屏内嵌的少量楼中楼；
+ *  2) /x/v2/reply/wbi/reply 针对仍缺 IP 的主评论，按 root 拉全部楼中楼补全。
+ *     （main 接口只内嵌首屏楼中楼，深层“回复的回复”必须走这一步）
+ *
+ * 网页端 location 自带「IP属地：」前缀，这里统一剥掉，只留地名。
  */
 public final class IpBackfill {
 
     private IpBackfill() {}
 
     private static final String MAIN = "https://api.bilibili.com/x/v2/reply/wbi/main";
+    private static final String SUB  = "https://api.bilibili.com/x/v2/reply/wbi/reply";
     private static final long THROTTLE_MS = 80;
     private static final int MAX_PAGES = 200;
     private static final int SUB_MAX_PAGES = 50;
-    private static final long SUB_THROTTLE_MS = 40;
 
-    public static volatile int statWeb = 0;
-    public static volatile int statGrpcRoots = 0;
-    public static volatile int statGrpcHits = 0;
-
+    /** 拉网页端主评论，按 rpid 建 location 映射（含首屏楼中楼）。失败返回空 map，不抛。 */
     public static Map<Long, String> fetchLocations(long oid, int type) {
         Map<Long, String> map = new HashMap<>();
         String next = "0";
@@ -58,7 +60,6 @@ public final class IpBackfill {
                         if (rpid == 0) continue;
                         String loc = clean(locOf(m));
                         if (loc != null && !loc.isEmpty()) map.put(rpid, loc);
-
                         List<Object> subs = Json2.arr(m.get("replies"));
                         if (subs != null) {
                             for (Object so : subs) {
@@ -88,67 +89,73 @@ public final class IpBackfill {
         return map;
     }
 
-    public static int apply(long oid, int type, List<Reply> mains) {
-        if (mains == null || mains.isEmpty()) return 0;
-        int n = 0;
-
-        Map<Long, String> map = fetchLocations(oid, type);
-        if (!map.isEmpty()) {
-            for (Reply m : mains) {
-                if (fill(m, map)) n++;
-                for (Reply s : m.subs) if (fill(s, map)) n++;
-            }
-        }
-        statWeb = n;
-
-        int roots = 0, hits = 0;
-        for (Reply m : mains) {
-            if (m.subs == null || m.subs.isEmpty()) continue;
-            boolean need = false;
-            for (Reply s : m.subs) {
-                if (s.location == null || s.location.trim().isEmpty()) { need = true; break; }
-            }
-            if (!need) continue;
-            roots++;
+    /** 按 root（主评论 rpid）拉全部楼中楼，建 location 映射。失败返回空 map。 */
+    public static Map<Long, String> fetchSubLocations(long oid, int type, long root) {
+        Map<Long, String> map = new HashMap<>();
+        for (int pn = 1; pn <= SUB_MAX_PAGES; pn++) {
+            if (pn > 1) sleep(THROTTLE_MS);
             try {
-                List<Reply> full = fetchSubsViaGrpc(oid, type, m.id);
-                Map<Long, String> subMap = new HashMap<>();
-                for (Reply x : full) {
-                    if (x.location != null && !x.location.trim().isEmpty()) subMap.put(x.id, x.location);
+                LinkedHashMap<String, String> p = new LinkedHashMap<>();
+                p.put("oid", String.valueOf(oid));
+                p.put("type", String.valueOf(type));
+                p.put("root", String.valueOf(root));
+                p.put("ps", "20");
+                p.put("pn", String.valueOf(pn));
+                WbiSign.sign(p);
+                String url = SUB + "?" + SpaceApi.buildQuery(p);
+                String body = SpaceApi.getWithHeaders(url, SpaceApi.PC_UA,
+                        "https://www.bilibili.com/");
+                Map<String, Object> r = Json2.obj(Json2.parse(body));
+                if (r == null || Json2.lng(r, "code") != 0) break;
+                Map<String, Object> data = Json2.obj(r.get("data"));
+                if (data == null) break;
+                List<Object> subs = Json2.arr(data.get("replies"));
+                if (subs == null || subs.isEmpty()) break;
+                for (Object o : subs) {
+                    Map<String, Object> m = Json2.obj(o);
+                    if (m == null) continue;
+                    long rpid = Json2.lng(m, "rpid");
+                    if (rpid == 0) continue;
+                    String loc = clean(locOf(m));
+                    if (loc != null && !loc.isEmpty()) map.put(rpid, loc);
                 }
-                if (!subMap.isEmpty()) {
-                    for (Reply s : m.subs) if (fill(s, subMap)) { n++; hits++; }
+                Map<String, Object> page = Json2.obj(data.get("page"));
+                if (page != null) {
+                    long count = Json2.lng(page, "count");
+                    if (pn * 20 >= count) break;
+                } else if (subs.size() < 20) {
+                    break;
                 }
-            } catch (Throwable t) { }
-            sleep(SUB_THROTTLE_MS);
+            } catch (Throwable t) {
+                break;
+            }
         }
-        statGrpcRoots = roots;
-        statGrpcHits = hits;
-        return n;
+        return map;
     }
 
-    private static List<Reply> fetchSubsViaGrpc(long oid, int type, long root) {
-        List<Reply> out = new ArrayList<>();
-        long cursor = 0;
-        String offset = null;
-        String prevKey = "";
-        int stall = 0;
-        for (int pg = 0; pg < SUB_MAX_PAGES; pg++) {
-            if (pg > 0) sleep(SUB_THROTTLE_MS);
-            ReplyApi2.SubPage sp;
-            try { sp = ReplyApi2.detailList(oid, type, root, cursor, 2, offset); }
-            catch (Exception e) { break; }
-            if (sp.replies.isEmpty()) break;
-            StringBuilder key = new StringBuilder();
-            for (Reply x : sp.replies) key.append(x.id).append(',');
-            if (key.toString().equals(prevKey)) { if (++stall >= 3) break; }
-            else { stall = 0; prevKey = key.toString(); }
-            out.addAll(sp.replies);
-            if (sp.replies.size() < 20) break;
-            if (sp.nextCursor != 0) cursor = sp.nextCursor;
-            if (sp.nextOffset != null) offset = sp.nextOffset;
+    /** 回填：先主评论映射，再对仍缺 IP 的楼中楼按 root 二次回填。返回填上的条数。 */
+    public static int apply(long oid, int type, List<Reply> mains) {
+        if (mains == null || mains.isEmpty()) return 0;
+        Map<Long, String> map = fetchLocations(oid, type);
+        int n = 0;
+        for (Reply m : mains) {
+            if (fill(m, map)) n++;
+            for (Reply s : m.subs) if (fill(s, map)) n++;
         }
-        return out;
+
+        // 二次回填：对仍有缺 IP 楼中楼的主评论，走 x/v2/reply/wbi/reply 按 root 拉全
+        for (Reply m : mains) {
+            if (m == null || m.subs == null || m.subs.isEmpty()) continue;
+            boolean missing = false;
+            for (Reply s : m.subs) {
+                if (s != null && (s.location == null || s.location.trim().isEmpty())) { missing = true; break; }
+            }
+            if (!missing) continue;
+            Map<Long, String> subMap = fetchSubLocations(oid, type, m.id);
+            if (subMap.isEmpty()) continue;
+            for (Reply s : m.subs) if (fill(s, subMap)) n++;
+        }
+        return n;
     }
 
     private static boolean fill(Reply r, Map<Long, String> map) {
@@ -160,12 +167,14 @@ public final class IpBackfill {
         return true;
     }
 
+    /** 从单条网页端 reply 对象取 location（reply_control.location） */
     private static String locOf(Map<String, Object> m) {
         Map<String, Object> ctrl = Json2.obj(m.get("reply_control"));
         if (ctrl == null) return null;
         return Json2.str(ctrl, "location");
     }
 
+    /** 剥掉「IP属地：」「IP属地:」前缀与空白，只留地名 */
     private static String clean(String s) {
         if (s == null) return null;
         String t = s.trim();
