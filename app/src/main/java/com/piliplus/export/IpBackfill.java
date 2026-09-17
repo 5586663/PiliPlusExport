@@ -9,8 +9,8 @@ import java.util.Map;
  * IP 属地回填。
  *  1) /x/v2/reply/wbi/main 建主评论 location 映射，并顺带取首屏内嵌楼中楼；
  *  2) /x/v2/reply/reply 针对仍缺 IP 的主评论，按 root 拉全部楼中楼补全。
- * 官方 PiliPlus lib/http/reply.dart: Api.replyReplyList = '/x/v2/reply/reply'，无需 wbi 签名。
- * tag = PiliExportDiag
+ * 分页以 page.count 为准，不因单页不满 20 中断。
+ * clean() 幂等剥前缀。
  */
 public final class IpBackfill {
 
@@ -105,6 +105,8 @@ public final class IpBackfill {
         Map<Long, String> map = new HashMap<>();
         long lastCode = -999;
         int pages = 0;
+        int count = -1;
+        int got = 0;
         for (int pn = 1; pn <= SUB_MAX_PAGES; pn++) {
             if (pn > 1) sleep(THROTTLE_MS);
             try {
@@ -132,15 +134,17 @@ public final class IpBackfill {
                     if (m == null) continue;
                     long rpid = Json2.lng(m, "rpid");
                     if (rpid == 0) continue;
+                    got++;
                     String loc = clean(locOf(m));
                     if (loc != null && !loc.isEmpty()) map.put(rpid, loc);
                 }
                 Map<String, Object> page = Json2.obj(data.get("page"));
                 if (page != null) {
-                    long count = Json2.lng(page, "count");
-                    if (pn * 20 >= count) break;
-                } else if (subs.size() < 20) {
-                    break;
+                    count = (int) Json2.lng(page, "count");
+                    if (count > 0 && got >= count) break;
+                    if (subs.isEmpty()) break;
+                } else {
+                    if (subs.size() < 20) break;
                 }
             } catch (Throwable t) {
                 lastCode = -997;
@@ -148,7 +152,8 @@ public final class IpBackfill {
             }
         }
         log("fetchSubLocations root=" + root + " pages=" + pages
-                + " map=" + map.size() + " lastCode=" + lastCode);
+                + " count=" + count + " got=" + got + " map=" + map.size()
+                + " lastCode=" + lastCode);
         return map;
     }
 
@@ -205,8 +210,11 @@ public final class IpBackfill {
     private static String clean(String s) {
         if (s == null) return null;
         String t = s.trim();
-        if (t.startsWith("IP属地：")) t = t.substring(5).trim();
-        else if (t.startsWith("IP属地:")) t = t.substring(5).trim();
+        while (true) {
+            if (t.startsWith("IP属地：")) t = t.substring(5).trim();
+            else if (t.startsWith("IP属地:")) t = t.substring(5).trim();
+            else break;
+        }
         return t;
     }
 
