@@ -1,0 +1,21 @@
+name: JADX RK
+on:
+  workflow_dispatch:
+jobs:
+  d:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq unzip wget default-jre-headless
+      - run: wget -q https://github.com/skylot/jadx/releases/download/v1.5.1/jadx-1.5.1.zip -O /tmp/j.zip && unzip -q /tmp/j.zip -d /tmp/jadx
+      - name: prep+run
+        run: |
+          ls -la input/ || true
+          if [ -f input/rk.dex.gz ]; then gunzip -c input/rk.dex.gz > input/rk.dex; fi
+          ls -la input/
+          /tmp/jadx/bin/jadx -d out --show-bad-code input/rk.dex 2>&1 | tail -20 || true
+          echo '--- java count ---'; find out -name '*.java' | wc -l
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jadx-rk-out
+          path: out/
