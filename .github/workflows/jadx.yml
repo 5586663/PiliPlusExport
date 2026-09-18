@@ -1,0 +1,31 @@
+name: JADX Decompile
+on:
+  workflow_dispatch:
+jobs:
+  decompile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq unzip wget default-jre-headless
+      - name: Get jadx
+        run: |
+          wget -q https://github.com/skylot/jadx/releases/download/v1.5.1/jadx-1.5.1.zip -O jadx.zip
+          unzip -q jadx.zip -d jadx
+      - name: Prep dex
+        run: |
+          mkdir -p input
+          ls -la input/ || true
+          if [ -f input/dex.gz ]; then gunzip -c input/dex.gz > input/dex; fi
+          ls -la input/
+      - name: Decompile
+        run: |
+          bash jadx/bin/jadx -d out --show-bad-code input/dex 2>&1 | tail -30 || true
+          echo '--- out ---'; find out -name '*.java' | wc -l
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: jadx-out
+          path: out/
