@@ -2,8 +2,25 @@ package com.piliplus.export;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
+/**
+ * 带 type 参数的评论接口。
+ *
+ * BiliApi.mainList() 把 type 写死为 1（视频），动态评论需要 type=17，
+ * 因此这里提供参数化版本，复用 BiliApi.grpcRaw 通道。
+ *
+ * 字段号同 BiliApi（已核实）：
+ *   MainListReq:  oid=1 type=2 cursor=3 pagination=10
+ *   DetailListReq: oid=1 type=2 root=3 rpid=4 cursor=5 scene=6 mode=7 pagination=8
+ *
+ * 评论区 type 取值：
+ *   1  = 视频
+ *   12 = 专栏
+ *   17 = 动态
+ */
 public final class ReplyApi2 {
 
     private ReplyApi2() {}
@@ -20,6 +37,7 @@ public final class ReplyApi2 {
         public String nextOffset;
     }
 
+    /** 主评论分页（可指定 type） */
     public static Page mainList(long oid, int type, long nextCursor, int mode, String offset) throws Exception {
         byte[] req = Proto.cat(
                 Proto.fv(1, oid),
@@ -28,6 +46,7 @@ public final class ReplyApi2 {
                 offset == null ? null : Proto.fb(10, Proto.fb(2, offset.getBytes(StandardCharsets.UTF_8))));
         byte[] resp = BiliApi.grpcRaw(BiliApi.MAIN, req);
         Page p = new Page();
+
         byte[] cur = Proto.getB(resp, 1);
         if (cur != null) {
             p.nextCursor = Proto.getV(cur, 1);
@@ -35,22 +54,34 @@ public final class ReplyApi2 {
         }
         byte[] sc = Proto.getB(resp, 3);
         if (sc != null) p.totalCount = Proto.getV(sc, 16);
+
         byte[] pr = Proto.getB(resp, 20);
         if (pr != null) {
             byte[] off = Proto.getB(pr, 1);
             if (off != null) p.nextOffset = new String(off, StandardCharsets.UTF_8);
         }
-        java.util.List<byte[]> _raws = Proto.getAllB(resp, 2);
-        int _valid = 0, _bad = 0; StringBuilder _ids = new StringBuilder();
-        for (byte[] _rb : _raws) { Reply _r = Reply.parse(_rb); if (_r.valid()) _valid++; else _bad++; _ids.append(_r.id).append(','); }
-        try { java.io.FileWriter _fw = new java.io.FileWriter("/storage/emulated/0/Download/PiliPlus_导出/diag_raw.txt", true);
-            _fw.write("raw=" + _raws.size() + " valid=" + _valid + " bad=" + _bad + " ids=" + _ids + "\n"); _fw.close(); } catch (Throwable _ig) {}
+
+        // MainListReply 里置顶评论是独立字段，不在 replies(2) 里：
+        //   4 = upTop（UP 主置顶）  5 = adminTop（管理员置顶）
+        //   6 = voteTop            14 = topReplies（repeated）
+        // 旧实现只读 replies(2)，导致置顶评论丢失（接口总数比导出多一条）。
+        Set<Long> seen = new HashSet<>();
+        collect(p.replies, seen, Proto.getB(resp, 4));   // upTop
+        collect(p.replies, seen, Proto.getB(resp, 5));   // adminTop
+        collect(p.replies, seen, Proto.getB(resp, 6));   // voteTop
+        for (byte[] tb : Proto.getAllB(resp, 14)) collect(p.replies, seen, tb); // topReplies
+
+        List<byte[]> _raws = Proto.getAllB(resp, 2);
         DebugDump.dumpReplies(_raws, "mainList type=" + type);
-        for (byte[] rb : _raws) {
-            Reply r = Reply.parse(rb);
-            if (r.valid()) p.replies.add(r);
-        }
+        for (byte[] rb : _raws) collect(p.replies, seen, rb);
         return p;
+    }
+
+    /** 解析单条并去重加入结果。 */
+    private static void collect(List<Reply> out, Set<Long> seen, byte[] rb) {
+        if (rb == null) return;
+        Reply r = Reply.parse(rb);
+        if (r != null && r.valid() && seen.add(r.id)) out.add(r);
     }
 
     public static class SubPage {
@@ -59,14 +90,15 @@ public final class ReplyApi2 {
         public String nextOffset;
     }
 
+    /** 楼中楼分页（可指定 type） */
     public static SubPage detailList(long oid, int type, long root, long cursor, int mode, String offset) throws Exception {
         byte[] req = Proto.cat(
                 Proto.fv(1, oid),
                 Proto.fv(2, type),
                 Proto.fv(3, root),
-                Proto.fv(4, 0),
+                Proto.fv(4, root),
                 cursor == 0 ? null : Proto.fb(5, Proto.cat(Proto.fv(1, cursor), Proto.fv(4, 0))),
-                Proto.fv(6, 0),
+                Proto.fv(6, 1),
                 Proto.fv(7, mode),
                 offset == null ? null : Proto.fb(8, Proto.fb(2, offset.getBytes(StandardCharsets.UTF_8))));
         byte[] resp = BiliApi.grpcRaw(BiliApi.DETAIL, req);
@@ -80,32 +112,6 @@ public final class ReplyApi2 {
                 if (r.valid()) p.replies.add(r);
             }
         }
-        diagDetail(oid, root, rootB, p);
         return p;
-    }
-
-    private static void diagDetail(long oid, long root, byte[] rootB, SubPage p) {
-        try {
-            int parsedLoc = 0;
-            for (Reply r : p.replies) if (r.location != null && !r.location.isEmpty()) parsedLoc++;
-            int ctrlCnt = 0, field25 = 0;
-            if (rootB != null) {
-                for (byte[] sb : Proto.getAllB(rootB, 1)) {
-                    byte[] c = Proto.getB(sb, 14);
-                    if (c != null) { ctrlCnt++; if (Proto.getB(c, 25) != null) field25++; }
-                }
-            }
-            String msg = "detailList oid=" + oid + " root=" + root + " subs=" + p.replies.size()
-                    + " ctrl=" + ctrlCnt + " field25=" + field25 + " parsedLoc=" + parsedLoc;
-            android.util.Log.i("PiliExportDiag", msg);
-            java.io.File f = new java.io.File("/storage/emulated/0/Download/PiliPlus_导出/diag_detail.txt");
-            java.io.File d = f.getParentFile();
-            if (d != null && !d.exists()) d.mkdirs();
-            java.io.FileWriter fw = new java.io.FileWriter(f, true);
-            fw.write(msg + "\n");
-            fw.close();
-        } catch (Throwable t) {
-            android.util.Log.e("PiliExportDiag", "diag fail", t);
-        }
     }
 }
