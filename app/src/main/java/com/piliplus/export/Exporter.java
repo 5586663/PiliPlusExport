@@ -51,14 +51,17 @@ public class Exporter {
                 // buvid 是设备级，不清，否则 -352 风控
                 String savedCookie = BiliApi.COOKIE;
                 String savedKey = BiliApi.ACCESS_KEY;
+                String savedBuvid = GrpcHeaders.buvid;
                 BiliApi.COOKIE = "";
                 BiliApi.ACCESS_KEY = null;
+                GrpcHeaders.buvid = "XY" + java.util.UUID.randomUUID().toString().replace("-", "") + "infoc";
                 List<Reply> mains;
                 try {
                     mains = fetchAll(v.aid, ReplyApi2.TYPE_VIDEO, v.title);
                 } finally {
                     BiliApi.COOKIE = savedCookie;
                     BiliApi.ACCESS_KEY = savedKey;
+                    GrpcHeaders.buvid = savedBuvid;
                 }
                 int sub = 0;
                 for (Reply m : mains) sub += m.subs.size();
