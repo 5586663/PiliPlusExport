@@ -10,9 +10,12 @@ import java.util.List;
 /**
  * 单视频评论导出。
  *
- * 关键：拉评论清空账户级信息（COOKIE + ACCESS_KEY），未登录态才能拿到被屏蔽用户的评论；
- *      buvid 是设备级（GrpcHeaders.buvid），不清，否则 -352 风控。
- *      拉完后恢复账户 cookie，供 IP 属地回填。
+ * 拉评论用【官方 gRPC】ReplyApi2.mainList，但拉之前彻底清空账号级信息：
+ *   COOKIE=""，ACCESS_KEY=null
+ *   （ACCESS_KEY 必须 null：GrpcHeaders.metadataBin 判断 accessKey==null，
+ *     传空串仍会写出 accessKey 字段，等于还带账号）
+ * 设备级 buvid 保留（GrpcHeaders.buvid），否则 -352 风控。
+ * 拉完恢复账号态，交给 IpBackfill2 回填 IP 属地。
  */
 public class Exporter {
 
@@ -43,17 +46,18 @@ public class Exporter {
                 if (v.aid == 0) { cb.error("取视频信息失败：" + videoId); return; }
                 cb.on("视频：" + v.title, 0, 0);
 
-                // ---- 拉评论：清空账户级信息（cookie + accessKey），未登录态才能拿到被屏蔽用户的评论 ----
-                // buvid 是设备级（GrpcHeaders.buvid），不清，否则 -352 风控
+                // ---- 拉评论：清空账号级信息（cookie + accessKey），走官方 gRPC ----
+                // ACCESS_KEY 置 null（非空串），否则 metadataBin 仍写 accessKey 字段
+                // buvid 是设备级，不清，否则 -352 风控
                 String savedCookie = BiliApi.COOKIE;
                 String savedKey = BiliApi.ACCESS_KEY;
                 BiliApi.COOKIE = "";
-                BiliApi.ACCESS_KEY = "";
+                BiliApi.ACCESS_KEY = null;
                 List<Reply> mains;
                 try {
                     mains = fetchAll(v.aid, ReplyApi2.TYPE_VIDEO, v.title);
                 } finally {
-                    BiliApi.COOKIE = savedCookie;   // 恢复账户 cookie，供 IP 回填
+                    BiliApi.COOKIE = savedCookie;
                     BiliApi.ACCESS_KEY = savedKey;
                 }
                 int sub = 0;
