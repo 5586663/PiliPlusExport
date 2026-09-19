@@ -182,36 +182,4 @@ public final class DynApi {
     private static String urlEnc(String s) {
         try { return java.net.URLEncoder.encode(s, "UTF-8"); } catch (Exception e) { return s; }
     }
-
-    /** 单个动态详情（对齐 PiliPlus DynamicsHttp.dynamicDetail）。 */
-    public static final String DETAIL = "https://api.bilibili.com/x/polymer/web-dynamic/v1/detail";
-
-    public static DynItem detail(String id) throws Exception {
-        Map<String, String> p = new LinkedHashMap<>();
-        p.put("timezone_offset", "-480");
-        p.put("id", id);
-        p.put("features", FEATURES);
-        p.put("gaia_source", "Athena");
-        p.put("web_location", "333.1330");
-        try { WbiSign.sign(p); } catch (Throwable ignored) {}
-        StringBuilder q = new StringBuilder("?");
-        for (Map.Entry<String, String> e : p.entrySet()) {
-            if (q.length() > 1) q.append('&');
-            q.append(e.getKey()).append('=').append(urlEnc(e.getValue()));
-        }
-        String body = SpaceApi.getWithHeaders(DETAIL + q, PC_UA, "https://t.bilibili.com/" + id);
-        Map<String, Object> root = Json2.obj(Json2.parse(body));
-        if (root == null) throw new Exception("动态详情解析失败");
-        long code = Json2.lng(root, "code");
-        if (code != 0) throw new Exception("动态 code=" + code + " msg=" + Json2.str(root, "message"));
-        Map<String, Object> data = Json2.obj(root.get("data"));
-        if (data == null) throw new Exception("动态 data 为空");
-        Map<String, Object> item = Json2.obj(data.get("item"));
-        if (item == null) item = data;
-        DynItem d = parseItem(item);
-        if (d == null) throw new Exception("动态 item 解析失败");
-        if (d.dynIdStr.isEmpty()) d.dynIdStr = id;
-        return d;
-    }
-
 }
