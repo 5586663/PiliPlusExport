@@ -140,7 +140,7 @@ public final class DynExporter {
             int add = 0;
             for (Reply x : sp.replies) if (x.id != 0 && ids.add(x.id)) { out.add(x); add++; }
             if (add == 0 && stall > 0) break;
-            if (sp.replies.size() < 20) break;
+            if (sp.replies.size() < 20 && sp.nextCursor == 0) break;
             if (sp.nextCursor != 0) cursor = sp.nextCursor;
             if (sp.nextOffset != null) offset = sp.nextOffset;
         }
