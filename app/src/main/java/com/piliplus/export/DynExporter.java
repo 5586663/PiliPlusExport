@@ -83,7 +83,7 @@ public final class DynExporter {
 
     // ==================================================================
     /** 拉一条 oid 下的全部主评论 + 展开楼中楼。type: TYPE_VIDEO / TYPE_DYNAMIC */
-    static List<Reply> fetchAll(long oid, int type) { String _ck = BiliApi.COOKIE; String _ak = BiliApi.ACCESS_KEY; BiliApi.COOKIE = ""; BiliApi.ACCESS_KEY = ""; try {
+    static List<Reply> fetchAll(long oid, int type) {
         List<Reply> mains = new ArrayList<>();
         Set<Long> seen = new HashSet<>();
         long cursor = 0;
@@ -94,7 +94,7 @@ public final class DynExporter {
             if (pg > 0) sleep(THROTTLE_MS);
             ReplyApi2.Page p;
             try {
-                p = ReplyApi2.mainList(oid, type, cursor, 1, offset);
+                p = ReplyApi2.mainList(oid, type, cursor, 3, offset);
             } catch (Exception e) {
                 break;
             }
@@ -102,7 +102,8 @@ public final class DynExporter {
             for (Reply x : p.replies) if (seen.add(x.id)) { mains.add(x); add++; }
             noNew = add > 0 ? 0 : noNew + 1;
             if (noNew >= NO_NEW_LIMIT || p.replies.isEmpty()) break;
-            if (p.nextCursor != 0) cursor = p.nextCursor; if (p.nextOffset != null) offset = p.nextOffset;
+            if (p.nextCursor != 0) cursor = p.nextCursor;
+            if (p.nextOffset != null) offset = p.nextOffset;
             if (p.isEnd && add == 0) break;
         }
 
@@ -116,7 +117,6 @@ public final class DynExporter {
             }
         }
         return mains;
-        } finally { BiliApi.COOKIE = _ck; BiliApi.ACCESS_KEY = _ak; }
     }
 
     static List<Reply> fetchSubs(long oid, int type, long root) {
@@ -140,7 +140,7 @@ public final class DynExporter {
             int add = 0;
             for (Reply x : sp.replies) if (x.id != 0 && ids.add(x.id)) { out.add(x); add++; }
             if (add == 0 && stall > 0) break;
-            if (sp.replies.size() < 20 && sp.nextCursor == 0) break;
+            if (sp.replies.size() < 20) break;
             if (sp.nextCursor != 0) cursor = sp.nextCursor;
             if (sp.nextOffset != null) offset = sp.nextOffset;
         }
