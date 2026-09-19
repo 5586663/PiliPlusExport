@@ -10,15 +10,9 @@ import java.util.List;
 /**
  * 单视频评论导出。
  *
- * 输出：/storage/emulated/0/Download/PiliPlus_导出/单视频/<标题>/
- *        视频信息.md
- *        视频.mp4                 （可选，dash 分离流下载后本机 MediaMuxer 合并）
- *        视频.xml                 （弹幕，与视频同名，播放器自动挂载）
- *        弹幕.md
- *        视频评论/评论.md
- *        视频评论/评论图片/评论N.jpg
- *
- * 若无 MANAGE_EXTERNAL_STORAGE：先落 App 私有目录，结束时用 MediaStore API 镜像到 Download。
+ * 关键：拉评论清空账户级信息（COOKIE + ACCESS_KEY），未登录态才能拿到被屏蔽用户的评论；
+ *      buvid 是设备级（GrpcHeaders.buvid），不清，否则 -352 风控。
+ *      拉完后恢复账户 cookie，供 IP 属地回填。
  */
 public class Exporter {
 
@@ -34,14 +28,10 @@ public class Exporter {
     private final Context ctx;
     private final Progress cb;
 
-    /** true 表示输出落在 App 私有目录，导出结束需用 MediaStore 镜像到 Download。 */
     private boolean useMsPublish = false;
 
-    /** 是否拉弹幕 */
     public boolean danmaku = true;
-    /** 是否回填评论 IP 属地 */
     public boolean ipBackfill = true;
-    /** 是否下载视频文件（dash 高清，极慢、占空间大） */
     public boolean downloadVideo = false;
 
     public Exporter(Context ctx, Progress cb) { this.ctx = ctx; this.cb = cb; }
@@ -53,19 +43,33 @@ public class Exporter {
                 if (v.aid == 0) { cb.error("取视频信息失败：" + videoId); return; }
                 cb.on("视频：" + v.title, 0, 0);
 
-                List<Reply> mains = fetchAll(v.aid, ReplyApi2.TYPE_VIDEO, v.title);
+                // ---- 拉评论：清空账户级信息（cookie + accessKey），未登录态才能拿到被屏蔽用户的评论 ----
+                // buvid 是设备级（GrpcHeaders.buvid），不清，否则 -352 风控
+                String savedCookie = BiliApi.COOKIE;
+                String savedKey = BiliApi.ACCESS_KEY;
+                BiliApi.COOKIE = "";
+                BiliApi.ACCESS_KEY = "";
+                List<Reply> mains;
+                try {
+                    mains = fetchAll(v.aid, ReplyApi2.TYPE_VIDEO, v.title);
+                } finally {
+                    BiliApi.COOKIE = savedCookie;   // 恢复账户 cookie，供 IP 回填
+                    BiliApi.ACCESS_KEY = savedKey;
+                }
                 int sub = 0;
                 for (Reply m : mains) sub += m.subs.size();
 
                 File root = exportRoot();
-                String upName = (v.ownerName != null && !v.ownerName.isEmpty()) ? v.ownerName : "未知UP"; String upDirName = NameUtil.safe(v.ownerMid > 0 ? (upName + " " + v.ownerMid) : upName); File upDir = new File(root, upDirName); File dir = new File(upDir, NameUtil.safe(v.title));
+                String upName = (v.ownerName != null && !v.ownerName.isEmpty()) ? v.ownerName : "未知UP";
+                String upDirName = NameUtil.safe(v.ownerMid > 0 ? (upName + " " + v.ownerMid) : upName);
+                File upDir = new File(root, upDirName);
+                File dir = new File(upDir, NameUtil.safe(v.title));
                 if (!dir.exists() && !dir.mkdirs()) throw new Exception("无法创建目录：" + dir);
 
                 CommentSaver.writeFile(new File(dir, "视频信息.md"),
                         "# " + v.title + "\n\n> 视频：https://www.bilibili.com/video/" + v.bvid
                         + "\n> 导出：" + MdWriter2.now() + "\n");
 
-                // ---- 下载视频文件 ----
                 if (downloadVideo) {
                     try {
                         VideoItem vi = new VideoItem();
@@ -87,7 +91,6 @@ public class Exporter {
                     }
                 }
 
-                // ---- 弹幕 ----
                 if (danmaku) {
                     try {
                         long cid = PlayUrlApi.cidOf(v.bvid, v.aid);
@@ -100,7 +103,7 @@ public class Exporter {
                     }
                 }
 
-                // ---- 评论 IP 属地回填 ----
+                // ---- IP 属地回填（此处 COOKIE / ACCESS_KEY 已恢复为账户态） ----
                 if (ipBackfill && !mains.isEmpty()) {
                     try {
                         int n = IpBackfill2.apply(v.aid, ReplyApi2.TYPE_VIDEO, mains);
@@ -118,7 +121,6 @@ public class Exporter {
                         + "> 导出：" + MdWriter2.now() + "\n";
                 int[] st = CommentSaver.save(cdir, header, mains, withPics, null);
 
-                // ---- 发布到共享 Download ----
                 String outPath = cdir.getAbsolutePath();
                 if (useMsPublish) {
                     String relBase = "PiliPlus_导出/单视频/" + upDirName + "/" + NameUtil.safe(v.title);
@@ -179,11 +181,6 @@ public class Exporter {
         return mains;
     }
 
-    /**
-     * 输出根目录。
-     * 有 MANAGE_EXTERNAL_STORAGE 时直写共享 Download；否则落私有目录，
-     * 导出结束后由 MsStore.publishTree 用 MediaStore API 镜像到 Download。
-     */
     private File exportRoot() {
         File shared = new File("/storage/emulated/0/Download/PiliPlus_导出/单视频");
         if (android.os.Build.VERSION.SDK_INT < 29 && writableDir(shared)) { useMsPublish = false; return shared; }
@@ -196,7 +193,6 @@ public class Exporter {
         return f;
     }
 
-    /** 目录必须存在、是目录、且能实际建文件才算可用。 */
     static boolean writableDir(File d) {
         if (!d.exists() && !d.mkdirs()) return false;
         if (!d.isDirectory()) return false;
