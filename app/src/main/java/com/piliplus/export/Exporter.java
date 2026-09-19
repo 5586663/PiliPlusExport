@@ -142,7 +142,7 @@ public class Exporter {
         }, "pili-export").start();
     }
 
-    private List<Reply> fetchAll(long aid, int type, String title) {
+    private List<Reply> fetchAll(long aid, int type, String title) { String _ck = BiliApi.COOKIE; BiliApi.COOKIE = ""; try {
         List<Reply> mains = new ArrayList<>();
         java.util.Set<Long> seen = new java.util.HashSet<>();
         long cursor = 0;
@@ -151,16 +151,15 @@ public class Exporter {
 
         for (int pg = 0; pg < 2000; pg++) {
             if (pg > 0) sleep(THROTTLE_MS);
-            ReplyApi2.Page p;
+            ReplyWeb.Page p;
             try {
-                p = ReplyApi2.mainList(aid, type, cursor, 3, offset);
+                p = ReplyWeb.mainList(aid, type, offset, 3);
             } catch (Exception e) { break; }
             int add = 0;
             for (Reply r : p.replies) if (seen.add(r.id)) { mains.add(r); add++; }
             cb.on("拉取主评论", mains.size(), 0);
             noNew = add > 0 ? 0 : noNew + 1;
             if (noNew >= NO_NEW_LIMIT || p.replies.isEmpty()) break;
-            if (p.nextCursor != 0) cursor = p.nextCursor;
             if (p.nextOffset != null) offset = p.nextOffset;
             if (p.isEnd && add == 0) break;
         }
@@ -177,6 +176,7 @@ public class Exporter {
             if ((i + 1) % 50 == 0) cb.on("展开楼中楼", i + 1, subSeen.size());
         }
         return mains;
+        } finally { BiliApi.COOKIE = _ck; }
     }
 
     /**
