@@ -184,6 +184,7 @@ public class MainHook implements IXposedHookLoadPackage {
 
         new AlertDialog.Builder(a)
                 .setTitle("导出单个视频评论")
+                .setNeutralButton("导出动态", (d, w) -> askDynId(a))
                 .setView(box)
                 .setPositiveButton("开始", (d, w) -> {
                     String s = et.getText().toString().trim();
@@ -239,6 +240,70 @@ public class MainHook implements IXposedHookLoadPackage {
     }
 
     // ==================================================================
+    // ------------------------------------------------------------------
+    /** 导出单个动态：读剪贴板自动识别，复用 DynExporter 落盘。 */
+    private static void askDynId(Activity a) {
+        String id = dynIdOf(readClipRaw(a));
+        EditText et = new EditText(a);
+        et.setHint("动态ID 或 t.bilibili.com/xxx");
+        if (id != null) et.setText(id);
+        LinearLayout box = new LinearLayout(a);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(48, 24, 48, 24);
+        box.addView(et);
+        new AlertDialog.Builder(a)
+                .setTitle("导出单个动态")
+                .setView(box)
+                .setPositiveButton("开始", (d, w) -> {
+                    String v = dynIdOf(et.getText().toString().trim());
+                    if (v == null || v.isEmpty()) { toast(a, "请输入动态ID"); return; }
+                    exportOneDyn(a, v);
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    /** 从任意文本抽动态ID（纯数字 或 t.bilibili.com/<id>）。 */
+    private static String dynIdOf(String s) {
+        if (s == null) return null;
+        Matcher m = Pattern.compile("(\\d{6,})").matcher(s);
+        return m.find() ? m.group(1) : null;
+    }
+
+    private static void exportOneDyn(Activity a, String dynId) {
+        injectCookie(a);
+        AlertDialog dlg = progressDialog(a, "正在导出动态");
+        TextView tv = (TextView) dlg.findViewById(android.R.id.message);
+        Handler ui = new Handler(Looper.getMainLooper());
+        final String id = dynId;
+        new Thread(() -> {
+            try {
+                DynItem d = DynApi.detail(id);
+                ui.post(() -> { if (tv != null) tv.setText("动态：" + (d.title.isEmpty() ? d.dynIdStr : d.title)); });
+                java.io.File root = new java.io.File("/storage/emulated/0/Download/PiliPlus_导出/单动态");
+                DynExporter.Result r = DynExporter.run(root,
+                        java.util.Collections.singletonList(d), true, true,
+                        (stage, cur, total, detail) -> ui.post(() -> {
+                            if (tv != null) tv.setText(stage + (detail == null ? "" : (" " + detail)));
+                        }));
+                ui.post(() -> {
+                    if (dlg.isShowing()) dlg.dismiss();
+                    new AlertDialog.Builder(a)
+                            .setTitle("导出完成")
+                            .setMessage("图片 " + r.dynPics + " 张\n评论 " + r.comments
+                                    + " 条\n\n目录：\n" + root.getAbsolutePath())
+                            .setPositiveButton("好", null).show();
+                });
+            } catch (Throwable t) {
+                ui.post(() -> {
+                    if (dlg.isShowing()) dlg.dismiss();
+                    new AlertDialog.Builder(a).setTitle("导出失败")
+                            .setMessage(t.getClass().getSimpleName() + ": " + t.getMessage())
+                            .setPositiveButton("好", null).show();
+                });
+            }
+        }, "pili-dyn").start();
+    }
     private static void askUpId(Activity a) {
         long fromClip = readClipMid(a);
 
