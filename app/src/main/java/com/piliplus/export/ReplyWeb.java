@@ -1,10 +1,5 @@
 package com.piliplus.export;
 
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -13,18 +8,14 @@ import java.util.Map;
 /**
  * 无登录评论拉取（复用 PiliPlus lib/http/reply.dart 未登录分支）。
  * GET https://api.bilibili.com/x/v2/reply/main
- * 空 cookie + NoAccount -> reply_control.location 即 IP 属地。
- *
- * 请求头严格对齐 PiliPlus NoAccount：AccountManager 拦截器对 NoAccount
- * 直接放行(handler.next)，最终头 = baseHeaders(env/app-key/x-bili-aurora-zone)
- * + cookie:''，不带任何账号信息。
+ * 空 cookie + 无账号 -> 返回的 reply_control.location 即 IP 属地。
+ * 拉取期间 BiliApi.COOKIE 被调用方清空，拉完恢复账号 cookie 交给 IpBackfill2 回填。
  */
 public final class ReplyWeb {
 
     private ReplyWeb() {}
 
     public static final String MAIN = "https://api.bilibili.com/x/v2/reply/main";
-    static final String UA = "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
 
     public static class Page {
         public List<Reply> replies = new ArrayList<>();
@@ -45,7 +36,7 @@ public final class ReplyWeb {
             if (q.length() > 1) q.append('&');
             q.append(e.getKey()).append('=').append(enc(e.getValue()));
         }
-        String body = get(MAIN + q);
+        String body = SpaceApi.getWithHeaders(MAIN + q, SpaceApi.PC_UA, "https://www.bilibili.com/");
         Map<String, Object> root = Json2.obj(Json2.parse(body));
         if (root == null) throw new Exception("评论响应解析失败");
         long code = Json2.lng(root, "code");
@@ -69,29 +60,6 @@ public final class ReplyWeb {
             if (nn != null && !nn.isEmpty()) page.nextOffset = nn;
         }
         return page;
-    }
-
-    /** PiliPlus NoAccount 请求：仅 baseHeaders + 空 cookie，不带任何账号信息。 */
-    private static String get(String url) throws Exception {
-        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
-        c.setRequestMethod("GET");
-        c.setConnectTimeout(15000);
-        c.setReadTimeout(20000);
-        c.setRequestProperty("User-Agent", UA);
-        c.setRequestProperty("env", "prod");
-        c.setRequestProperty("app-key", "android64");
-        c.setRequestProperty("x-bili-aurora-zone", "sh001");
-        c.setRequestProperty("cookie", "");
-        c.setRequestProperty("Referer", "https://www.bilibili.com/");
-        int code = c.getResponseCode();
-        InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream();
-        if (in == null) throw new Exception("HTTP " + code);
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        byte[] b = new byte[8192];
-        int n;
-        while ((n = in.read(b)) > 0) out.write(b, 0, n);
-        in.close();
-        return new String(out.toByteArray(), StandardCharsets.UTF_8);
     }
 
     private static Reply parse(Map<String, Object> m) {
