@@ -23,6 +23,8 @@ public class Reply {
     public String name = "";
     public String msg = "";
     public String location = "";                        // IP 属地
+    public boolean top = false;                          // 是否为置顶评论
+    public String topKind = "";                          // 置顶类型：UP主置顶 / 管理员置顶 / 热评
     public java.util.List<String> pics = new java.util.ArrayList<>();   // 评论图片 URL
     public java.util.List<byte[]> rawSubs = new java.util.ArrayList<>();
     public java.util.List<Reply> subs = new java.util.ArrayList<>();
