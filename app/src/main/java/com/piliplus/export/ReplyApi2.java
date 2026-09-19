@@ -41,6 +41,10 @@ public final class ReplyApi2 {
             if (off != null) p.nextOffset = new String(off, StandardCharsets.UTF_8);
         }
         java.util.List<byte[]> _raws = Proto.getAllB(resp, 2);
+        int _valid = 0, _bad = 0; StringBuilder _ids = new StringBuilder();
+        for (byte[] _rb : _raws) { Reply _r = Reply.parse(_rb); if (_r.valid()) _valid++; else _bad++; _ids.append(_r.id).append(','); }
+        try { java.io.FileWriter _fw = new java.io.FileWriter("/storage/emulated/0/Download/PiliPlus_导出/diag_raw.txt", true);
+            _fw.write("raw=" + _raws.size() + " valid=" + _valid + " bad=" + _bad + " ids=" + _ids + "\n"); _fw.close(); } catch (Throwable _ig) {}
         DebugDump.dumpReplies(_raws, "mainList type=" + type);
         for (byte[] rb : _raws) {
             Reply r = Reply.parse(rb);
