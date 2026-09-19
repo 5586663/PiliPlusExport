@@ -48,7 +48,7 @@ public final class IpBackfill {
                 LinkedHashMap<String, String> p = new LinkedHashMap<>();
                 p.put("oid", String.valueOf(oid));
                 p.put("type", String.valueOf(type));
-                p.put("mode", "3");
+                p.put("mode", "2");
                 p.put("next", next);
                 p.put("ps", "20");
                 WbiSign.sign(p);
