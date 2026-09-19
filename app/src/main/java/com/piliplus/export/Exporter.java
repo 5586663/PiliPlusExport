@@ -54,7 +54,7 @@ public class Exporter {
                 String savedBuvid = GrpcHeaders.buvid;
                 BiliApi.COOKIE = "";
                 BiliApi.ACCESS_KEY = null;
-                GrpcHeaders.buvid = "XY" + java.util.UUID.randomUUID().toString().replace("-", "") + "infoc";
+                GrpcHeaders.buvid = "XY00000000000000000000000000000000000";
                 List<Reply> mains;
                 try {
                     mains = fetchAll(v.aid, ReplyApi2.TYPE_VIDEO, v.title);
