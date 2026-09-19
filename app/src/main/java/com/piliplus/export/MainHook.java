@@ -184,7 +184,6 @@ public class MainHook implements IXposedHookLoadPackage {
 
         new AlertDialog.Builder(a)
                 .setTitle("导出单个视频评论")
-                .setNeutralButton("导出动态", (d, w) -> askDynId(a))
                 .setView(box)
                 .setPositiveButton("开始", (d, w) -> {
                     String s = et.getText().toString().trim();
@@ -207,7 +206,7 @@ public class MainHook implements IXposedHookLoadPackage {
     }
 
     private static void exportOneVideo(Activity a, String videoId, boolean withPics, boolean downloadVideo) {
-        injectCookie(a);
+        injectCookie();
         AlertDialog dlg = progressDialog(a, "正在导出评论");
         TextView tv = (TextView) dlg.findViewById(android.R.id.message);
 
@@ -240,70 +239,6 @@ public class MainHook implements IXposedHookLoadPackage {
     }
 
     // ==================================================================
-    // ------------------------------------------------------------------
-    /** 导出单个动态：读剪贴板自动识别，复用 DynExporter 落盘。 */
-    private static void askDynId(Activity a) {
-        String id = dynIdOf(readClipRaw(a));
-        EditText et = new EditText(a);
-        et.setHint("动态ID 或 t.bilibili.com/xxx");
-        if (id != null) et.setText(id);
-        LinearLayout box = new LinearLayout(a);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(48, 24, 48, 24);
-        box.addView(et);
-        new AlertDialog.Builder(a)
-                .setTitle("导出单个动态")
-                .setView(box)
-                .setPositiveButton("开始", (d, w) -> {
-                    String v = dynIdOf(et.getText().toString().trim());
-                    if (v == null || v.isEmpty()) { toast(a, "请输入动态ID"); return; }
-                    exportOneDyn(a, v);
-                })
-                .setNegativeButton("取消", null)
-                .show();
-    }
-
-    /** 从任意文本抽动态ID（纯数字 或 t.bilibili.com/<id>）。 */
-    private static String dynIdOf(String s) {
-        if (s == null) return null;
-        Matcher m = Pattern.compile("(\\d{6,})").matcher(s);
-        return m.find() ? m.group(1) : null;
-    }
-
-    private static void exportOneDyn(Activity a, String dynId) {
-        injectCookie(a);
-        AlertDialog dlg = progressDialog(a, "正在导出动态");
-        TextView tv = (TextView) dlg.findViewById(android.R.id.message);
-        Handler ui = new Handler(Looper.getMainLooper());
-        final String id = dynId;
-        new Thread(() -> {
-            try {
-                DynItem d = DynApi.detail(id);
-                ui.post(() -> { if (tv != null) tv.setText("动态：" + (d.title.isEmpty() ? d.dynIdStr : d.title)); });
-                java.io.File root = new java.io.File("/storage/emulated/0/Download/PiliPlus_导出/单动态");
-                DynExporter.Result r = DynExporter.run(root,
-                        java.util.Collections.singletonList(d), true, true,
-                        (stage, cur, total, detail) -> ui.post(() -> {
-                            if (tv != null) tv.setText(stage + (detail == null ? "" : (" " + detail)));
-                        }));
-                ui.post(() -> {
-                    if (dlg.isShowing()) dlg.dismiss();
-                    new AlertDialog.Builder(a)
-                            .setTitle("导出完成")
-                            .setMessage("图片 " + r.dynPics + " 张\n评论 " + r.comments
-                                    + " 条\n\n目录：\n" + root.getAbsolutePath())
-                            .setPositiveButton("好", null).show();
-                });
-            } catch (Throwable t) {
-                ui.post(() -> {
-                    if (dlg.isShowing()) dlg.dismiss();
-                    new AlertDialog.Builder(a).setTitle("导出失败")
-                            .setMessage(t.getClass().getSimpleName() + ": " + t.getMessage())
-                            .setPositiveButton("好", null).show();
-                });
-            }
-        }, "pili-dyn").start();
-    }
     private static void askUpId(Activity a) {
         long fromClip = readClipMid(a);
 
@@ -400,7 +335,7 @@ public class MainHook implements IXposedHookLoadPackage {
     }
 
     private static void exportUp(Activity a, long mid, UpExporter.Options opt) {
-        injectCookie(a);
+        injectCookie();
         AlertDialog dlg = progressDialog(a, "正在导出 UP 主");
         TextView tv = (TextView) dlg.findViewById(android.R.id.message);
 
@@ -447,57 +382,14 @@ public class MainHook implements IXposedHookLoadPackage {
         return d;
     }
 
-    private static void injectCookie(Context c) {
-        try {
-            java.io.File f = new java.io.File(c.getFilesDir().getParentFile() + "/files/hive/account.hive");
-            if (f.exists()) {
-                java.io.FileInputStream in = new java.io.FileInputStream(f);
-                byte[] a = new byte[(int) f.length()];
-                int o = 0, n;
-                while (o < a.length && (n = in.read(a, o, a.length - o)) > 0) o += n;
-                in.close();
-                StringBuilder cur = new StringBuilder();
-                java.util.List<String> t = new java.util.ArrayList<String>();
-                for (int i = 0; i < a.length; i++) {
-                    int v = a[i] & 0xff;
-                    if (v >= 32 && v < 127) cur.append((char) v);
-                    else { if (cur.length() >= 2) t.add(cur.toString()); cur.setLength(0); }
-                }
-                if (cur.length() >= 2) t.add(cur.toString());
-                StringBuilder sb = new StringBuilder();
-                String[] ks = {"SESSDATA", "bili_jct", "DedeUserID", "DedeUserID__ckMd5", "buvid3"};
-                String bv3 = null;
-                for (int k = 0; k < ks.length; k++)
-                    for (int i = 0; i + 1 < t.size(); i++)
-                        if (t.get(i).equals(ks[k])) { sb.append(ks[k]).append("=").append(t.get(i + 1)).append("; "); if (k == 4) bv3 = t.get(i + 1); break; }
-                String ak = findAccessKey(a);
-                if (ak != null) BiliApi.ACCESS_KEY = ak;
-                if (bv3 != null) GrpcHeaders.buvid = bv3;
-                if (sb.length() > 0) { BiliApi.COOKIE = sb.toString(); return; }
-            }
-        } catch (Throwable ignored) {}
+    private static void injectCookie() {
         try {
             String ck = CookieManager.getInstance().getCookie("https://api.bilibili.com");
-            if (ck == null || ck.length() == 0) ck = CookieManager.getInstance().getCookie("https://app.bilibili.com");
-            if (ck != null && ck.length() > 0) BiliApi.COOKIE = ck;
+            if (ck == null || ck.isEmpty()) ck = CookieManager.getInstance().getCookie("https://app.bilibili.com");
+            if (ck != null && !ck.isEmpty()) BiliApi.COOKIE = ck;
         } catch (Throwable ignored) {}
     }
 
-    private static String findAccessKey(byte[] a) {
-        for (int i = 0; i + 28 <= a.length; i++) {
-            if ((a[i] & 0xff) != 1 || (a[i + 1] & 0xff) != 4) continue;
-            int len = (a[i + 2] & 0xff) | ((a[i + 3] & 0xff) << 8) | ((a[i + 4] & 0xff) << 16) | ((a[i + 5] & 0xff) << 24);
-            if (len < 16 || len > 64) continue;
-            int vs = i + 6, ve = vs + len;
-            if (ve + 6 > a.length) continue;
-            boolean ok = true;
-            for (int k = vs; k < ve; k++) { int ch = a[k] & 0xff; if (!((ch >= 48 && ch <= 57) || (ch >= 97 && ch <= 122) || (ch >= 65 && ch <= 90))) { ok = false; break; } }
-            if (!ok) continue;
-            if ((a[ve] & 0xff) != 2 || (a[ve + 1] & 0xff) != 4) continue;
-            return new String(a, vs, len);
-        }
-        return null;
-    }
     private static String readClipBv(Context c) {
         try {
             String t = readClipRaw(c);
