@@ -175,7 +175,7 @@ public final class IpBackfill {
             if (key.toString().equals(prevKey)) { if (++stall >= 3) break; }
             else { stall = 0; prevKey = key.toString(); }
             out.addAll(sp.replies);
-            if (sp.replies.size() < 20) break;
+            if (sp.replies.size() < 20 && sp.nextCursor == 0) break;
             if (sp.nextCursor != 0) cursor = sp.nextCursor;
             if (sp.nextOffset != null) offset = sp.nextOffset;
         }
