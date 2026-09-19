@@ -103,7 +103,7 @@ public class Exporter {
                 // ---- 评论 IP 属地回填 ----
                 if (ipBackfill && !mains.isEmpty()) {
                     try {
-                        int n = IpBackfill2.apply(v.aid, ReplyApi2.TYPE_VIDEO, mains);
+                        int n = IpBackfill.apply(v.aid, ReplyApi2.TYPE_VIDEO, mains);
                         cb.on("IP属地回填 " + n + " 条", 0, 0);
                     } catch (Throwable t) {
                         cb.on("IP属地失败：" + t.getMessage(), 0, 0);
@@ -142,7 +142,7 @@ public class Exporter {
         }, "pili-export").start();
     }
 
-    private List<Reply> fetchAll(long aid, int type, String title) { String _ck = BiliApi.COOKIE; String _ak = BiliApi.ACCESS_KEY; BiliApi.COOKIE = ""; BiliApi.ACCESS_KEY = ""; try {
+    private List<Reply> fetchAll(long aid, int type, String title) {
         List<Reply> mains = new ArrayList<>();
         java.util.Set<Long> seen = new java.util.HashSet<>();
         long cursor = 0;
@@ -153,26 +153,15 @@ public class Exporter {
             if (pg > 0) sleep(THROTTLE_MS);
             ReplyApi2.Page p;
             try {
-                p = ReplyApi2.mainList(aid, type, cursor, 1, offset);
-            } catch (Exception e) {
-                try {
-                    java.io.FileWriter _fw = new java.io.FileWriter("/storage/emulated/0/Download/PiliPlus_导出/diag_mainlist.txt", true);
-                    _fw.write("FAIL pg=" + pg + " cursor=" + cursor + " offset=" + offset + " err=" + e + "\n");
-                    _fw.close();
-                } catch (Throwable _ig) {}
-                break;
-            }
-            try {
-                java.io.FileWriter _fw2 = new java.io.FileWriter("/storage/emulated/0/Download/PiliPlus_导出/diag_mainlist.txt", true);
-                _fw2.write("OK pg=" + pg + " got=" + p.replies.size() + " total=" + mains.size() + " nextCursor=" + p.nextCursor + " hasOff=" + (p.nextOffset != null) + " isEnd=" + p.isEnd + "\n");
-                _fw2.close();
-            } catch (Throwable _ig) {}
+                p = ReplyApi2.mainList(aid, type, cursor, 3, offset);
+            } catch (Exception e) { break; }
             int add = 0;
             for (Reply r : p.replies) if (seen.add(r.id)) { mains.add(r); add++; }
             cb.on("拉取主评论", mains.size(), 0);
             noNew = add > 0 ? 0 : noNew + 1;
             if (noNew >= NO_NEW_LIMIT || p.replies.isEmpty()) break;
-            if (p.nextCursor != 0) cursor = p.nextCursor; if (p.nextOffset != null) offset = p.nextOffset;
+            if (p.nextCursor != 0) cursor = p.nextCursor;
+            if (p.nextOffset != null) offset = p.nextOffset;
             if (p.isEnd && add == 0) break;
         }
 
@@ -188,7 +177,6 @@ public class Exporter {
             if ((i + 1) % 50 == 0) cb.on("展开楼中楼", i + 1, subSeen.size());
         }
         return mains;
-        } finally { BiliApi.COOKIE = _ck; BiliApi.ACCESS_KEY = _ak; }
     }
 
     /**
