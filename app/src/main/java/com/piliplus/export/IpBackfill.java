@@ -211,7 +211,7 @@ public final class IpBackfill {
             if (m == null) continue;
             List<Reply> full = fetchSubsViaGrpc(oid, type, m.id);
             if (!full.isEmpty()) {
-                m.subs = full;
+                { java.util.Set<Long> _h = new java.util.HashSet<>(); for (Reply _s : m.subs) _h.add(_s.id); for (Reply _f : full) if (_f != null && _f.id != 0 && _h.add(_f.id)) m.subs.add(_f); }
                 roots++;
                 grpcTotal += full.size();
             }
