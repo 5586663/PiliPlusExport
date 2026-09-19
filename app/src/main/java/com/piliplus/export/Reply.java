@@ -58,11 +58,23 @@ public class Reply {
         byte[] control = Proto.getB(buf, 14);
         if (control != null) {
             String loc = Proto.getS(control, 25);
-            if (loc != null) r.location = loc;
+            if (loc != null) r.location = stripIpPrefix(loc);
         }
         r.rawSubs = Proto.getAllB(buf, 1);
         for (byte[] s : r.rawSubs) r.subs.add(Reply.parse(s));
         return r;
+    }
+
+    /** 剥掉 B 站 location 值自带的「IP属地：」前缀，只留地名，避免 md 中前缀重复。 */
+    public static String stripIpPrefix(String s) {
+        if (s == null) return "";
+        String t = s.trim();
+        while (true) {
+            if (t.startsWith("IP属地：")) t = t.substring(5).trim();
+            else if (t.startsWith("IP属地:")) t = t.substring(5).trim();
+            else break;
+        }
+        return t;
     }
 
     public boolean valid() { return id != 0; }
