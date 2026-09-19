@@ -83,7 +83,7 @@ public final class DynExporter {
 
     // ==================================================================
     /** 拉一条 oid 下的全部主评论 + 展开楼中楼。type: TYPE_VIDEO / TYPE_DYNAMIC */
-    static List<Reply> fetchAll(long oid, int type) { String _ck = BiliApi.COOKIE; BiliApi.COOKIE = ""; try {
+    static List<Reply> fetchAll(long oid, int type) { String _ck = BiliApi.COOKIE; String _ak = BiliApi.ACCESS_KEY; BiliApi.COOKIE = ""; BiliApi.ACCESS_KEY = ""; try {
         List<Reply> mains = new ArrayList<>();
         Set<Long> seen = new HashSet<>();
         long cursor = 0;
@@ -92,9 +92,9 @@ public final class DynExporter {
 
         for (int pg = 0; pg < 2000; pg++) {
             if (pg > 0) sleep(THROTTLE_MS);
-            ReplyWeb.Page p;
+            ReplyApi2.Page p;
             try {
-                p = ReplyWeb.mainList(oid, type, offset, 3);
+                p = ReplyApi2.mainList(oid, type, cursor, 1, offset);
             } catch (Exception e) {
                 break;
             }
@@ -102,7 +102,7 @@ public final class DynExporter {
             for (Reply x : p.replies) if (seen.add(x.id)) { mains.add(x); add++; }
             noNew = add > 0 ? 0 : noNew + 1;
             if (noNew >= NO_NEW_LIMIT || p.replies.isEmpty()) break;
-            if (p.nextOffset != null) offset = p.nextOffset;
+            if (p.nextCursor != 0) cursor = p.nextCursor; if (p.nextOffset != null) offset = p.nextOffset;
             if (p.isEnd && add == 0) break;
         }
 
@@ -116,7 +116,7 @@ public final class DynExporter {
             }
         }
         return mains;
-        } finally { BiliApi.COOKIE = _ck; }
+        } finally { BiliApi.COOKIE = _ck; BiliApi.ACCESS_KEY = _ak; }
     }
 
     static List<Reply> fetchSubs(long oid, int type, long root) {
