@@ -66,22 +66,24 @@ public final class ReplyApi2 {
         //   6 = voteTop            14 = topReplies（repeated）
         // 旧实现只读 replies(2)，导致置顶评论丢失（接口总数比导出多一条）。
         Set<Long> seen = new HashSet<>();
-        collect(p.replies, seen, Proto.getB(resp, 4));   // upTop
-        collect(p.replies, seen, Proto.getB(resp, 5));   // adminTop
-        collect(p.replies, seen, Proto.getB(resp, 6));   // voteTop
-        for (byte[] tb : Proto.getAllB(resp, 14)) collect(p.replies, seen, tb); // topReplies
+        collect(p.replies, seen, Proto.getB(resp, 4), "UP主置顶");   // upTop
+        collect(p.replies, seen, Proto.getB(resp, 5), "管理员置顶"); // adminTop
+        collect(p.replies, seen, Proto.getB(resp, 6), "热评置顶");   // voteTop
+        for (byte[] tb : Proto.getAllB(resp, 14)) collect(p.replies, seen, tb, "置顶"); // topReplies
 
         List<byte[]> _raws = Proto.getAllB(resp, 2);
         DebugDump.dumpReplies(_raws, "mainList type=" + type);
-        for (byte[] rb : _raws) collect(p.replies, seen, rb);
+        for (byte[] rb : _raws) collect(p.replies, seen, rb, null);
         return p;
     }
 
-    /** 解析单条并去重加入结果。 */
-    private static void collect(List<Reply> out, Set<Long> seen, byte[] rb) {
+    /** 解析单条并去重加入结果。kind 非空表示置顶来源。 */
+    private static void collect(List<Reply> out, Set<Long> seen, byte[] rb, String kind) {
         if (rb == null) return;
         Reply r = Reply.parse(rb);
-        if (r != null && r.valid() && seen.add(r.id)) out.add(r);
+        if (r == null || !r.valid() || !seen.add(r.id)) return;
+        if (kind != null) { r.top = true; r.topKind = kind; }
+        out.add(r);
     }
 
     public static class SubPage {
