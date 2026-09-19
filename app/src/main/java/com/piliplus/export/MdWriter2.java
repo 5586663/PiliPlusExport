@@ -154,7 +154,9 @@ public final class MdWriter2 {
         int idx = 0;
         for (Reply m : mains) {
             idx++;
-            b.append("### ").append(idx).append(". ").append(name(m)).append("\n\n");
+            b.append("### ").append(idx).append(". ").append(name(m));
+            if (m.top) b.append("　**【").append(topLabel(m)).append("】**");
+            b.append("\n\n");
             b.append("> UID：").append(m.mid).append("　点赞：").append(m.like)
              .append("　时间：").append(fmt(m.ctime));
             if (!ip(m).isEmpty()) b.append("　IP属地：").append(ip(m));
@@ -186,6 +188,12 @@ public final class MdWriter2 {
         }
         b.append("*由 PiliPlus 导出模块生成*\n");
         return b.toString();
+    }
+
+    /** 置顶标签文案。 */
+    private static String topLabel(Reply m) {
+        if (m.topKind == null || m.topKind.isEmpty()) return "置顶";
+        return m.topKind;
     }
 
     // ==================================================================
