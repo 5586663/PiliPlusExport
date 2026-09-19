@@ -154,7 +154,19 @@ public class Exporter {
             ReplyApi2.Page p;
             try {
                 p = ReplyApi2.mainList(aid, type, cursor, 1, offset);
-            } catch (Exception e) { break; }
+            } catch (Exception e) {
+                try {
+                    java.io.FileWriter _fw = new java.io.FileWriter("/storage/emulated/0/Download/PiliPlus_导出/diag_mainlist.txt", true);
+                    _fw.write("FAIL pg=" + pg + " cursor=" + cursor + " offset=" + offset + " err=" + e + "\n");
+                    _fw.close();
+                } catch (Throwable _ig) {}
+                break;
+            }
+            try {
+                java.io.FileWriter _fw2 = new java.io.FileWriter("/storage/emulated/0/Download/PiliPlus_导出/diag_mainlist.txt", true);
+                _fw2.write("OK pg=" + pg + " got=" + p.replies.size() + " total=" + mains.size() + " nextCursor=" + p.nextCursor + " hasOff=" + (p.nextOffset != null) + " isEnd=" + p.isEnd + "\n");
+                _fw2.close();
+            } catch (Throwable _ig) {}
             int add = 0;
             for (Reply r : p.replies) if (seen.add(r.id)) { mains.add(r); add++; }
             cb.on("拉取主评论", mains.size(), 0);
