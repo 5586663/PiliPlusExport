@@ -24,8 +24,7 @@ public final class ReplyApi2 {
         byte[] req = Proto.cat(
                 Proto.fv(1, oid),
                 Proto.fv(2, type),
-                Proto.fb(3, Proto.cat(Proto.fv(1, nextCursor), Proto.fv(4, mode))),
-                offset == null ? null : Proto.fb(10, Proto.fb(2, offset.getBytes(StandardCharsets.UTF_8))));
+                Proto.fb(3, Proto.cat(Proto.fv(1, nextCursor), Proto.fv(4, mode))));
         byte[] resp = BiliApi.grpcRaw(BiliApi.MAIN, req);
         Page p = new Page();
         byte[] cur = Proto.getB(resp, 1);
